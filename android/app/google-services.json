@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1049808440381",
+    "project_id": "bookedmic-1cf9d",
+    "storage_bucket": "bookedmic-1cf9d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1049808440381:android:491ddff61a9ba53e70ee54",
+        "android_client_info": {
+          "package_name": "com.bookedmic.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDopcXm8vBWAsK35NupkSD3Hm0153bHFX0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1049808440381:android:ab0cab31edfd335a70ee54",
+        "android_client_info": {
+          "package_name": "com.example.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDopcXm8vBWAsK35NupkSD3Hm0153bHFX0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
