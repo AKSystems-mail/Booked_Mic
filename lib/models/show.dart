@@ -1,33 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:myapp/models/spot.dart';
 
-class Spot {
-  final String name;
-  final String type;
-
-  Spot({
-    required this.name,
-    required this.type,
-  });
-
-  Map<String, dynamic> toMap() {
-    return {'name': name, 'type': type};
-  }
-
-  static Spot fromMap(Map<String, dynamic> map) {
-    return Spot(
-      name: map['name'],
-      type: map['type'],
-    );
-  }
-}
 
 class Show {
   final String? id;
   final String showName;
   final DateTime date;
   final String location;
-  final String city;
+   final String city;
   final String state;
   final int spots;
   final List<String> reservedSpots;
@@ -69,8 +50,8 @@ class Show {
       'reservedSpots': reservedSpots,
       'bucketSpots': bucketSpots,
       'waitListSpots': waitListSpots,
-      'waitList': waitList.map((spot) => spot.toMap()).toList(),
-      'spotsList': spotsList.map((spot) => spot.toMap()).toList(),
+      'waitList': waitList.map((item) => item.toJson()).toList(),
+      'spotsList': spotsList.map((item) => item.toJson()).toList(),
       'bucketNames': bucketNames,
       'cutoffDate': cutoffDate != null ? Timestamp.fromDate(cutoffDate!) : null,
       'cutoffTime': cutoffTime != null
@@ -103,9 +84,11 @@ class Show {
       spotsList: (data['spotsList'] as List).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(),
       bucketNames: List<String>.from(data['bucketNames'] as List),
       cutoffDate: (data['cutoffDate'] as Timestamp?)?.toDate(),
-      cutoffTime: data['cutoffTime'] != null
-          ? TimeOfDay.fromDateTime((data['cutoffTime'] as Timestamp).toDate())
-          : null,
+        cutoffTime: data['cutoffTime'] != null
+            ? TimeOfDay(
+                hour: (data['cutoffTime'] as Timestamp).toDate().hour,
+                minute: (data['cutoffTime'] as Timestamp).toDate().minute)
+            : null,
     );
   }
 }

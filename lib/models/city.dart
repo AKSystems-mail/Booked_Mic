@@ -1,46 +1,30 @@
-// models/signup.dart
+// models/city.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class Signup{
+class City {
   final String? id;
-  final String performerName;
-  final DateTime signupTime;
-  final int position;
-  final bool isFinished;
-  final bool isBucket;
-  final bool isWaitlist;
+  final String name;
+  final String state;
 
-  Signup({
+  City({
     this.id,
-    required this.performerName,
-    required this.signupTime,
-    required this.position,
-    required this.isFinished,
-    required this.isBucket,
-    required this.isWaitlist,
+    required this.name,
+    required this.state,
   });
 
   Map<String, dynamic> toMap() {
     return {
-      'performerName': performerName,
-      'signupTime': signupTime,
-      'position': position,
-      'isFinished': isFinished,
-      'isBucket': isBucket,
-      'isWaitlist': isWaitlist,
+      'name': name,
+      'state': state,
     };
   }
 
-  factory Signup.fromFirestore(DocumentSnapshot doc) {
+  factory City.fromFirestore(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
-    return Signup(
+    return City(
       id: doc.id,
-      performerName: data['performerName'],
-      signupTime: (data['signupTime'] as Timestamp).toDate(),
-      position: data['position'],
-      isFinished: data['isFinished'],
-      isBucket: data['isBucket'],
-      isWaitlist: data['isWaitlist'],
+      name: data['name'],
+      state: data['state'],
     );
   }
 }
