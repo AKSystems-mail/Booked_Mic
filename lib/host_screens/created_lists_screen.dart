@@ -51,7 +51,7 @@ class CreatedListsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Container(
+            body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topRight,
@@ -68,12 +68,15 @@ class CreatedListsScreen extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
+                  print('Error: ${snapshot.error}');
                   return const Center(child: Text('Error loading shows.'));
                 }
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  print('No data found');
                   return const Center(child: Text('No shows created yet.'));
                 }
 
+                print('Data: ${snapshot.data}');
                 return GridView.builder(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,

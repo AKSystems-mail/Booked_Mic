@@ -1,14 +1,14 @@
+// models/show.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:myapp/models/spot.dart';
-
 
 class Show {
   final String? id;
   final String showName;
   final DateTime date;
   final String location;
-   final String city;
+  final String city;
   final String state;
   final int spots;
   final List<String> reservedSpots;
@@ -69,26 +69,30 @@ class Show {
   factory Show.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
+    // Debug prints to check data
+    print('Document ID: ${doc.id}');
+    print('Data: $data');
+
     return Show(
       id: doc.id,
       showName: data['showName'] as String,
       date: (data['date'] as Timestamp).toDate(),
       location: data['location'] as String,
-      city: data['city'] as String,
-      state: data['state'] as String,
+      city: data['city'] ?? '', // Handle null value for city
+      state: data['state'] ?? '', // Handle null value for state
       spots: data['spots'] as int,
-      reservedSpots: List<String>.from(data['reservedSpots'] as List),
+      reservedSpots: List<String>.from(data['reservedSpots'] ?? []), // Handle null value for reservedSpots
       bucketSpots: data['bucketSpots'] as bool,
       waitListSpots: data['waitListSpots'] as int,
-      waitList: (data['waitList'] as List).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(),
-      spotsList: (data['spotsList'] as List).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(),
-      bucketNames: List<String>.from(data['bucketNames'] as List),
+      waitList: (data['waitList'] as List<dynamic>? ?? []).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(), // Handle null value for waitList
+      spotsList: (data['spotsList'] as List<dynamic>? ?? []).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(), // Handle null value for spotsList
+      bucketNames: List<String>.from(data['bucketNames'] ?? []), // Handle null value for bucketNames
       cutoffDate: (data['cutoffDate'] as Timestamp?)?.toDate(),
-        cutoffTime: data['cutoffTime'] != null
-            ? TimeOfDay(
-                hour: (data['cutoffTime'] as Timestamp).toDate().hour,
-                minute: (data['cutoffTime'] as Timestamp).toDate().minute)
-            : null,
+      cutoffTime: data['cutoffTime'] != null
+          ? TimeOfDay(
+              hour: (data['cutoffTime'] as Timestamp).toDate().hour,
+              minute: (data['cutoffTime'] as Timestamp).toDate().minute)
+          : null,
     );
   }
 }

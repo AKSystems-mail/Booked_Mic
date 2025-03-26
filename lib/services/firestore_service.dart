@@ -14,6 +14,8 @@ class FirestoreService {
       show.spots,
       (index) => Spot(
         name: '',
+        performerId: null,
+        confirmed: false,
         type: '', // Ensure the type property is included
       ).toJson(), // Use toJson method
     );
@@ -39,7 +41,7 @@ class FirestoreService {
       bucketSpots: true,
       waitListSpots: 5,
       waitList: [],
-      spotsList: [],
+      spotsList: List.generate(10, (index) => Spot(name: '', type: '', performerId: null, confirmed: false)),
       bucketNames: [],
       cutoffDate: DateTime.now(),
       cutoffTime: TimeOfDay.now(),

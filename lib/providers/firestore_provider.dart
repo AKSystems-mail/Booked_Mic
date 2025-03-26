@@ -1,4 +1,4 @@
-// providers/firestore_provider
+// providers/firestore_provider.dart
 import 'package:flutter/material.dart';
 import 'package:myapp/services/firestore_service.dart';
 import 'package:myapp/models/show.dart';
