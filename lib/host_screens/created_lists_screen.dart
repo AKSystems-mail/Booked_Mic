@@ -51,7 +51,7 @@ class CreatedListsScreen extends StatelessWidget {
           ),
         ],
       ),
-            body: Container(
+      body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topRight,
@@ -98,7 +98,13 @@ class CreatedListsScreen extends StatelessWidget {
                             context: context,
                             builder: (BuildContext context) {
                               return AlertDialog(
-                                title: Text(show.showName),
+                                title: Text(
+                                  show.showName,
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15.0),
+                                ),
                                 content: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -112,7 +118,13 @@ class CreatedListsScreen extends StatelessWidget {
                                           ),
                                         );
                                       },
-                                      child: const Text('Edit'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue.shade600,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                      ),
+                                      child: const Text('Edit', style: TextStyle(color: Colors.white)),
                                     ),
                                     const SizedBox(height: 8),
                                     ElevatedButton(
@@ -125,7 +137,13 @@ class CreatedListsScreen extends StatelessWidget {
                                           ),
                                         );
                                       },
-                                      child: const Text('Open'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue.shade600,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                      ),
+                                      child: const Text('Open', style: TextStyle(color: Colors.white)),
                                     ),
                                   ],
                                 ),
@@ -145,7 +163,23 @@ class CreatedListsScreen extends StatelessWidget {
                                 const SizedBox(height: 8),
                                 Text(formattedDate, style: const TextStyle(color: Colors.grey)),
                                 const SizedBox(height: 8),
-                                // Removed QR code widget
+                                if (show.spots > 0)
+                                  Text(
+                                    'Number of spots: ${show.spotsList.length}/${show.spots}',
+                                    style: TextStyle(
+                                      color: show.spotsList.length == show.spots ? Colors.red : Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                const SizedBox(height: 8),
+                                if (show.reservedSpots.isNotEmpty)
+                                  Text(
+                                    'Reserved Spots: ${show.reservedSpots.length}',
+                                    style: TextStyle(
+                                      color: show.reservedSpots.length == show.reservedSpots.length ? Colors.red : Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
