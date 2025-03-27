@@ -1,210 +1,141 @@
-// host_screens/created_lists_screen.dart
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:myapp/models/show.dart';
-import 'package:myapp/providers/firestore_provider.dart';
-import 'package:animate_do/animate_do.dart';
-import 'package:intl/intl.dart';
+// lib/pages/created_lists_screen.dart
 
-import '../main.dart';
-import 'edit_list_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
+
+// Import necessary screens
 import 'list_setup_screen.dart';
-import '../role_selection_screen.dart';
-import 'show_list_screen.dart'; // Ensure this import is present
+import '../role_selection_screen.dart'; // Import RoleSelectionScreen
+// import 'show_list_screen.dart'; // Your detail screen
 
 class CreatedListsScreen extends StatelessWidget {
-  const CreatedListsScreen({super.key});
+  CreatedListsScreen({Key? key}) : super(key: key);
+
+  final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
+  // --- Function to handle switching role ---
+  Future<void> _switchRole(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_role'); // Clear the saved role
+
+    // Navigate back to RoleSelectionScreen, replacing the current screen
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => RoleSelectionScreen()),
+    );
+  }
+  // --- End Function ---
+
 
   @override
   Widget build(BuildContext context) {
+    if (currentUserId == null) {
+      // This part should ideally not be reached if AuthWrapper is working,
+      // but keep as a fallback.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+         if (Navigator.canPop(context)) {
+            Navigator.of(context).pushReplacementNamed('/registration');
+         } else {
+            Navigator.pushReplacementNamed(context, '/registration');
+         }
+      });
+       return Scaffold(body: Center(child: Text("Redirecting...")));
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Created Lists'),
-        backgroundColor: Colors.blue.shade400,
-        elevation: 0.0,
-        actions: <Widget>[
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(
-                    builder: (BuildContext context) => MyApp(),
-                  ),
-                  (route) => false,
-                );
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (context) => const RoleSelectionScreen()),
-                );
-              },
-              icon: const Icon(Icons.compare_arrows, color: Colors.white),
-              label: const Text('Switch Role', style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade600,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-            ),
+        title: Text('My Created Lists (Host)'), // Indicate role in title
+        backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Colors.white,
+        // --- Add Actions for the Button ---
+        actions: [
+          Tooltip( // Good practice for IconButton
+             message: 'Switch Role',
+             child: IconButton(
+                icon: Icon(Icons.switch_account),
+                onPressed: () => _switchRole(context), // Call the switch role function
+             ),
           ),
         ],
+        // --- End Actions ---
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [Colors.blue.shade200, Colors.purple.shade100],
-          ),
-        ),
-        child: Consumer<FirestoreProvider>(
-          builder: (context, firestoreProvider, _) {
-            return StreamBuilder<List<Show>>(
-              stream: firestoreProvider.getShows(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  print('Error: ${snapshot.error}');
-                  return const Center(child: Text('Error loading shows.'));
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  print('No data found');
-                  return const Center(child: Text('No shows created yet.'));
-                }
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('Lists')
+            .where('userId', isEqualTo: currentUserId)
+            .orderBy('createdAt', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          // ... (Existing StreamBuilder logic remains the same)
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            print("Error fetching lists: ${snapshot.error}");
+            return Center(child: Text('Error loading lists. Please try again.'));
+          }
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return Center(child: Text('You haven\'t created any lists yet.'));
+          }
 
-                print('Data: ${snapshot.data}');
-                return GridView.builder(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.8,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
+          return ListView.builder(
+            itemCount: snapshot.data!.docs.length,
+            itemBuilder: (context, index) {
+              final doc = snapshot.data!.docs[index];
+              final listData = doc.data() as Map<String, dynamic>?;
+              final String docId = doc.id;
+
+              if (listData == null) {
+                return ListTile(title: Text('Error loading list data'));
+              }
+
+              final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
+              final filledSpotsCount = spotsMap.length;
+              final regularSpots = (listData['numberOfSpots'] ?? 0) as int;
+              final waitlistSpots = (listData['numberOfWaitlistSpots'] ?? 0) as int;
+              final bucketSpots = (listData['numberOfBucketSpots'] ?? 0) as int;
+              final totalSpots = regularSpots + waitlistSpots + bucketSpots;
+
+              return Card(
+                margin: EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                child: ListTile(
+                  title: Text(listData['listName'] ?? 'Unnamed List'),
+                  subtitle: Text(listData['venueName'] ?? 'No Venue'),
+                  trailing: Text(
+                    'Spots: $filledSpotsCount/$totalSpots',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                   ),
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: snapshot.data!.length,
-                  itemBuilder: (BuildContext context, int index) {
-                    final show = snapshot.data![index];
-                    final formattedDate = DateFormat('MM-dd-yyyy').format(show.date);
-
-                    return FadeInUp(
-                      duration: Duration(milliseconds: 500 + index * 100),
-                      child: GestureDetector(
-                        onTap: () {
-                          showDialog(
-                            context: context,
-                            builder: (BuildContext context) {
-                              return AlertDialog(
-                                title: Text(
-                                  show.showName,
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15.0),
-                                ),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.pop(context); // Close the dialog
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => EditListScreen(showId: show.id!),
-                                          ),
-                                        );
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.blue.shade600,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(20),
-                                        ),
-                                      ),
-                                      child: const Text('Edit', style: TextStyle(color: Colors.white)),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.pop(context); // Close the dialog
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => ShowListScreen(showId: show.id!),
-                                          ),
-                                        );
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.blue.shade600,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(20),
-                                        ),
-                                      ),
-                                      child: const Text('Open', style: TextStyle(color: Colors.white)),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-                        },
-                        child: Card(
-                          elevation: 5,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(show.showName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                                const SizedBox(height: 8),
-                                Text(formattedDate, style: const TextStyle(color: Colors.grey)),
-                                const SizedBox(height: 8),
-                                if (show.spots > 0)
-                                  Text(
-                                    'Number of spots: ${show.spotsList.length}/${show.spots}',
-                                    style: TextStyle(
-                                      color: show.spotsList.length == show.spots ? Colors.red : Colors.black,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                const SizedBox(height: 8),
-                                if (show.reservedSpots.isNotEmpty)
-                                  Text(
-                                    'Reserved Spots: ${show.reservedSpots.length}',
-                                    style: TextStyle(
-                                      color: show.reservedSpots.length == show.reservedSpots.length ? Colors.red : Colors.black,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
+                  onTap: () {
+                    // TODO: Navigate to your list detail screen (e.g., ShowListScreen)
+                    /*
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ShowListScreen(listId: docId),
                       ),
                     );
+                    */
+                    print('Tapped on list: $docId');
                   },
-                );
-              },
-            );
-          },
-        ),
+                ),
+              );
+            },
+          );
+        },
       ),
-      floatingActionButton: ElasticIn(
-        duration: const Duration(milliseconds: 800),
-        child: FloatingActionButton(
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => ListSetupScreen()),
-            );
-          },
-          backgroundColor: Colors.blue.shade600,
-          child: const Icon(Icons.add, color: Colors.white),
-        ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            // Ensure this navigates to the correct setup screen class name
+            MaterialPageRoute(builder: (context) => ListSetupScreen()),
+          );
+        },
+        child: Icon(Icons.add),
+        tooltip: 'Create New List',
+        backgroundColor: Theme.of(context).primaryColor,
       ),
     );
   }

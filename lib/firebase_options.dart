@@ -56,4 +56,5 @@ class DefaultFirebaseOptions {
     projectId: 'bookedmic-1cf9d',
     storageBucket: 'bookedmic-1cf9d.firebasestorage.app',
   );
+
 }

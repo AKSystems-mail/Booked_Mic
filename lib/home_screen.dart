@@ -1,7 +1,7 @@
 // home_screen.dart
 import 'package:flutter/material.dart';
 import 'host_screens/list_setup_screen.dart';
-import 'performer_screens/registration_screen.dart';
+import 'registration_screen.dart';
 import 'host_screens/qr_code_screen.dart';
 
 class HomeScreen extends StatelessWidget {

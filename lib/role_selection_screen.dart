@@ -1,89 +1,109 @@
+// lib/pages/role_selection_screen.dart
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:animate_do/animate_do.dart'; // Import the animate_do package
-import 'providers/bmic_app_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Needed for potential sign out
+
+// Import destination screens
 import 'host_screens/created_lists_screen.dart';
-import 'performer_screens/registration_screen.dart'; // Import the registration screen
+import 'performer_screens/performer_list_screen.dart';
+import 'registration_screen.dart'; // For sign out navigation
 
 class RoleSelectionScreen extends StatelessWidget {
-  const RoleSelectionScreen({super.key});
+  const RoleSelectionScreen({Key? key}) : super(key: key);
+
+  Future<void> _selectRole(BuildContext context, String role) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_role', role);
+
+    // Use pushReplacement to remove RoleSelectionScreen from the stack
+    if (role == 'host') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => CreatedListsScreen()),
+      );
+    } else if (role == 'performer') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => PerformerListScreen()),
+      );
+    }
+  }
+
+  // Optional: Add sign out
+  Future<void> _signOut(BuildContext context) async {
+     final prefs = await SharedPreferences.getInstance();
+     await prefs.remove('user_role'); // Clear role on sign out
+     await FirebaseAuth.instance.signOut();
+     // Navigate back to registration after sign out, clearing the stack
+     Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => RegistrationScreen()),
+        (Route<dynamic> route) => false, // Remove all routes below
+     );
+  }
+
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [Colors.blue.shade200, Colors.purple.shade200],
-          ),
+    // --- Button Style Helper (copied from registration_screen for consistency) ---
+    ButtonStyle _buttonStyle() {
+      return ElevatedButton.styleFrom(
+        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).primaryColor,
+        minimumSize: Size(double.infinity, 50),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30.0),
         ),
-        child: Center(
+        textStyle: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+        elevation: 5,
+      );
+    }
+    // --- End Button Style Helper ---
+
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Select Your Role'),
+        backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Colors.white,
+        automaticallyImplyLeading: false, // Remove back button
+         actions: [ // Optional Sign Out Button
+           IconButton(
+             icon: Icon(Icons.logout),
+             tooltip: 'Sign Out',
+             onPressed: () => _signOut(context),
+           ),
+         ],
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(30.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              FadeInDown(
-                duration: const Duration(milliseconds: 800),
-                child: Text(
-                  'Select Your Role',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(
-                        blurRadius: 5.0,
-                        color: Colors.black.withOpacity(0.3),
-                        offset: const Offset(2, 2),
-                      ),
-                    ],
-                  ),
-                ),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                'Choose how you want to use the app:',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, color: Colors.black87),
               ),
-              const SizedBox(height: 40),
-              SlideInLeft(
-                duration: const Duration(milliseconds: 1000),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Provider.of<BmicAppState>(context, listen: false).setRole('Host');
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const CreatedListsScreen()),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
-                    textStyle: const TextStyle(fontSize: 20),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    backgroundColor: Colors.blue.shade400,
-                  ),
-                  child: const Text('Host', style: TextStyle(color: Colors.white)),
-                ),
+              SizedBox(height: 40),
+              ElevatedButton.icon(
+                icon: Icon(Icons.mic_external_on), // Example Icon
+                label: Text('Host'),
+                style: _buttonStyle(),
+                onPressed: () => _selectRole(context, 'host'),
               ),
-              const SizedBox(height: 20),
-              SlideInRight(
-                duration: const Duration(milliseconds: 1000),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Provider.of<BmicAppState>(context, listen: false).setRole('Performer');
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const RegistrationScreen()),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
-                    textStyle: const TextStyle(fontSize: 20),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    backgroundColor: Colors.purple.shade400,
-                  ),
-                  child: const Text('Performer', style: TextStyle(color: Colors.white)),
-                ),
+              SizedBox(height: 20),
+              ElevatedButton.icon(
+                icon: Icon(Icons.person_search), // Example Icon
+                label: Text('Performer'),
+                style: _buttonStyle(),
+                onPressed: () => _selectRole(context, 'performer'),
               ),
             ],
           ),
