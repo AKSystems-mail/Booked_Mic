@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-// Removed unused import: import 'performer_list_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   final String listId;
@@ -20,15 +19,13 @@ class _SignupScreenState extends State<SignupScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  String? _performerName;
+  // Use stageName now
+  String? _performerStageName;
   String? _performerId;
   bool _isLoadingPerformer = true;
   bool _isProcessing = false; // To prevent double taps on confirm/cancel
 
-  // State for tentative selection
-  // Removed unused field: int _selectedSpotIndex = -1;
-  // Removed unused field: SpotType? _selectedSpotType;
-  String? _selectedSpotKey; // Firestore map key (e.g., "3", "W1", "B2") - THIS IS USED
+  String? _selectedSpotKey; // Firestore map key (e.g., "3", "W1", "B2")
 
   @override
   void initState() {
@@ -38,26 +35,28 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _fetchPerformerData() async {
-    setState(() {
-      _isLoadingPerformer = true;
-    });
+    setState(() { _isLoadingPerformer = true; });
     try {
       final user = _auth.currentUser;
       if (user != null) {
         _performerId = user.uid;
-        // --- Replace with your actual logic to get performer name ---
+        // Fetch the specific 'stageName' field from 'users' collection
         DocumentSnapshot userDoc = await _firestore.collection('users').doc(_performerId).get();
         if (userDoc.exists && userDoc.data() != null) {
            var userData = userDoc.data() as Map<String, dynamic>;
-           _performerName = userData['displayName'] ?? userData['performerName'] ?? user.email ?? 'Unknown Performer';
+           // Use 'stageName' field, provide fallback if missing
+           _performerStageName = userData['stageName'] ?? user.email ?? 'Unknown Performer';
         } else {
-          _performerName = user.email ?? 'Unknown Performer'; // Fallback
+          _performerStageName = user.email ?? 'Unknown Performer'; // Fallback if user doc doesn't exist
+          print("Warning: User document not found in Firestore for uid: $_performerId. Using email as fallback name.");
         }
-        // --- End Replace ---
+      } else {
+         print("Error: Current user is null.");
+         _performerStageName = 'Error'; // Indicate error state
       }
     } catch (e) {
       print("Error fetching performer data: $e");
-      _performerName = 'Error'; // Indicate error
+      _performerStageName = 'Error'; // Indicate error state
       if (mounted) {
          ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error fetching your profile: $e')),
@@ -65,9 +64,7 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoadingPerformer = false;
-        });
+        setState(() { _isLoadingPerformer = false; });
       }
     }
   }
@@ -89,8 +86,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
         int currentSignups = 0;
         spotsMap.forEach((key, value) {
-          // Count only actual signups (value is a Map), not reserved spots (value is 'RESERVED')
-          if (value is Map) {
+          if (value is Map) { // Count only actual signups (Maps), not 'RESERVED' strings
             currentSignups++;
           }
         });
@@ -107,84 +103,88 @@ class _SignupScreenState extends State<SignupScreen> {
 
   void _showErrorAndGoBack(String message) {
      if (!mounted) return;
+     // Use addPostFrameCallback to ensure build context is valid after potential async gap
      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+        if (!mounted) return; // Double check after frame callback
         ScaffoldMessenger.of(context).showSnackBar(
            SnackBar(content: Text(message), duration: Duration(seconds: 3)),
         );
+        // Navigate back after showing the message
         Navigator.of(context).pop();
      });
   }
 
-  void _selectSpot(String spotKey, bool isAvailable) { // Removed unused index and type parameters
-    if (!isAvailable || _isLoadingPerformer || _performerName == null) return;
 
-    setState(() {
-      // Removed unused assignments: _selectedSpotIndex = index;
-      // Removed unused assignments: _selectedSpotType = type;
-      _selectedSpotKey = spotKey; // Only need to track the key
-    });
+  // --- Logic for Spot Selection and Confirmation ---
+
+  void _selectSpot(String spotKey, bool isAvailable) {
+    // Use _performerStageName for check
+    if (!isAvailable || _isLoadingPerformer || _performerStageName == null) return;
+    setState(() { _selectedSpotKey = spotKey; });
   }
 
   void _cancelSelection() {
-    setState(() {
-      // Removed unused assignments: _selectedSpotIndex = -1;
-      // Removed unused assignments: _selectedSpotType = null;
-      _selectedSpotKey = null;
-    });
+    setState(() { _selectedSpotKey = null; });
   }
 
   Future<void> _confirmSelection() async {
-    if (_selectedSpotKey == null || _performerName == null || _performerId == null || _isProcessing) return;
+    // Use _performerStageName
+    if (_selectedSpotKey == null || _performerStageName == null || _performerId == null || _isProcessing) return;
 
     setState(() { _isProcessing = true; });
 
     final listRef = _firestore.collection('Lists').doc(widget.listId);
 
     try {
+      // Use a transaction to prevent race conditions
       await _firestore.runTransaction((transaction) async {
         DocumentSnapshot snapshot = await transaction.get(listRef);
-
-        if (!snapshot.exists) {
-          throw Exception("List does not exist.");
-        }
+        if (!snapshot.exists) throw Exception("List does not exist.");
 
         Map<String, dynamic> listData = snapshot.data() as Map<String, dynamic>;
         Map<String, dynamic> spots = Map<String, dynamic>.from(listData['spots'] ?? {});
 
+        // Check if the selected spot is still available
         if (spots.containsKey(_selectedSpotKey!)) {
           throw Exception("Spot not available");
         } else {
+          // Spot is available, claim it
           spots[_selectedSpotKey!] = {
-             'name': _performerName!,
+             'name': _performerStageName!, // Use stage name
              'userId': _performerId!,
              'timestamp': FieldValue.serverTimestamp(),
           };
-          transaction.update(listRef, {'spots': spots});
+          // Also update the signedUpUserIds array
+          transaction.update(listRef, {
+             'spots': spots,
+             'signedUpUserIds': FieldValue.arrayUnion([_performerId!]) // Add user ID to array
+          });
         }
       });
 
+      // Success
       if (mounted) {
          ScaffoldMessenger.of(context).showSnackBar(
            SnackBar(content: Text('Signed up for spot $_selectedSpotKey!'), backgroundColor: Colors.green),
          );
-         Navigator.of(context).pop();
+         Navigator.of(context).pop(); // Go back after successful signup
       }
 
     } catch (e) {
+      // Handle failure (spot taken or other error)
       print("Error confirming selection: $e");
        if (mounted) {
          ScaffoldMessenger.of(context).showSnackBar(
            SnackBar(content: Text(e.toString() == "Exception: Spot not available" ? 'Sorry, that spot was just taken!' : 'Error signing up: ${e.toString()}'), backgroundColor: Colors.red),
          );
-         _cancelSelection();
+         _cancelSelection(); // Clear selection on error
        }
     } finally {
-       if (mounted) {
-          setState(() { _isProcessing = false; });
-       }
+       if (mounted) setState(() { _isProcessing = false; });
     }
   }
+
+  // --- Logic for Removing Signup ---
 
   Future<bool?> _showRemoveConfirmationDialog(String spotKey) async {
     return showDialog<bool>(
@@ -194,18 +194,8 @@ class _SignupScreenState extends State<SignupScreen> {
           title: Text('Confirm Removal'),
           content: Text('Are you sure you want to remove yourself from spot $spotKey?'),
           actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop(false);
-              },
-            ),
-            TextButton(
-              child: Text('Remove', style: TextStyle(color: Colors.red)),
-              onPressed: () {
-                Navigator.of(context).pop(true);
-              },
-            ),
+            TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(context).pop(false)),
+            TextButton(child: Text('Remove', style: TextStyle(color: Colors.red)), onPressed: () => Navigator.of(context).pop(true)),
           ],
         );
       },
@@ -213,21 +203,24 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _removeSignup(String spotKey) async {
-     if (_isProcessing) return;
+     // Added null check for performerId
+     if (_isProcessing || _performerId == null) return;
      setState(() { _isProcessing = true; });
 
      final listRef = _firestore.collection('Lists').doc(widget.listId);
 
      try {
-        await listRef.update({'spots.$spotKey': FieldValue.delete()});
+        // Remove spot key AND remove user from signedUpUserIds array
+        await listRef.update({
+           'spots.$spotKey': FieldValue.delete(),
+           'signedUpUserIds': FieldValue.arrayRemove([_performerId!]) // Remove user ID from array
+        });
         if (mounted) {
            ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Removed from spot $spotKey'), backgroundColor: Colors.orange),
            );
         }
-        if (_selectedSpotKey == spotKey) {
-           _cancelSelection();
-        }
+        if (_selectedSpotKey == spotKey) _cancelSelection();
      } catch (e) {
         print("Error removing signup: $e");
         if (mounted) {
@@ -236,11 +229,12 @@ class _SignupScreenState extends State<SignupScreen> {
            );
         }
      } finally {
-        if (mounted) {
-           setState(() { _isProcessing = false; });
-        }
+        if (mounted) setState(() { _isProcessing = false; });
      }
   }
+
+
+  // --- Build Method ---
 
   @override
   Widget build(BuildContext context) {
@@ -256,12 +250,7 @@ class _SignupScreenState extends State<SignupScreen> {
               return Text('Signup List');
            }
         ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-        ),
+        leading: IconButton(icon: Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).pop()),
         backgroundColor: Theme.of(context).primaryColor,
         foregroundColor: Colors.white,
       ),
@@ -281,7 +270,6 @@ class _SignupScreenState extends State<SignupScreen> {
                 }
 
                 var listData = snapshot.data!.data() as Map<String, dynamic>;
-                // Removed unused local variable: final listName = listData['listName'] ?? 'Unnamed List';
                 final totalSpots = (listData['numberOfSpots'] ?? 0) as int;
                 final totalWaitlist = (listData['numberOfWaitlistSpots'] ?? 0) as int;
                 final totalBucket = (listData['numberOfBucketSpots'] ?? 0) as int;
@@ -293,6 +281,7 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  // --- Helper Widget to Build List ---
   Widget _buildListContent(
       Map<String, dynamic> listData,
       Map<String, dynamic> spotsMap,
@@ -306,21 +295,24 @@ class _SignupScreenState extends State<SignupScreen> {
       final spotData = spotsMap[spotKey];
       bool isAvailable = spotData == null;
       bool isReserved = spotData == 'RESERVED';
-
-      // If it's not available and not reserved, it must be taken (a Map).
-      // We can safely cast or access fields within this assumption.
       bool isTaken = !isAvailable && !isReserved;
       bool isTakenByMe = false;
       String takenByName = 'Taken'; // Default text if taken by other
 
       if (isTaken) {
-        // Assuming spotData is a Map here based on the logic above
-        final spotInfo = spotData as Map<String, dynamic>;
-        if (spotInfo['userId'] == _performerId) {
-          isTakenByMe = true;
-          takenByName = spotInfo['name'] ?? 'You (Error reading name)';
+        // Check if spotData is a Map before accessing fields
+        if (spotData is Map<String, dynamic>) {
+           if (spotData['userId'] == _performerId) {
+             isTakenByMe = true;
+             // Display the name stored in the spot data (which should be the stage name)
+             takenByName = spotData['name'] ?? 'You (Error reading name)';
+           }
+           // If not taken by me, takenByName remains 'Taken'
+        } else {
+           // Handle unexpected data type in spotData if necessary
+           print("Warning: Unexpected data type found for spot $spotKey: $spotData");
+           takenByName = 'Error: Invalid Data';
         }
-        // If not taken by me, takenByName remains 'Taken'
       }
 
       bool isSelectedByMe = _selectedSpotKey == spotKey;
@@ -330,60 +322,43 @@ class _SignupScreenState extends State<SignupScreen> {
       FontWeight titleWeight = FontWeight.normal;
 
       if (isSelectedByMe) {
-        titleText = _performerName ?? 'Selecting...';
+        titleText = _performerStageName ?? 'Selecting...'; // Use stage name
         titleColor = Colors.blue;
         titleWeight = FontWeight.bold;
       } else if (isTakenByMe) {
-         titleText = takenByName; // Use the name fetched earlier
+         titleText = takenByName; // Already holds stage name from spot data
          titleWeight = FontWeight.bold;
-      } else if (isTaken && !isTakenByMe) { // Explicitly check if taken by other
+      } else if (isTaken && !isTakenByMe) {
         titleText = 'Taken';
         titleColor = Colors.grey;
       } else if (isReserved) {
         titleText = 'Reserved';
         titleColor = Colors.orange;
-      } else if (type == SpotType.bucket && isAvailable) { // Check isAvailable here
+      } else if (type == SpotType.bucket && isAvailable) {
          titleText = 'Bucket Spot';
          titleColor = Colors.green.shade700;
       }
-      else if (isAvailable) { // Check isAvailable for regular/waitlist
+      else if (isAvailable) { // Available regular/waitlist
         titleText = 'Available';
         titleColor = Colors.green.shade700;
       } else {
-         // Fallback, should ideally not be reached with current logic
-         titleText = 'Unknown State';
-         titleColor = Colors.red;
+         titleText = 'Unknown State'; titleColor = Colors.red;
       }
-
 
       String spotLabel;
        switch (type) {
-         case SpotType.regular:
-           spotLabel = "${displayIndex + 1}.";
-           break;
-         case SpotType.waitlist:
-           spotLabel = "W${displayIndex + 1}.";
-           break;
-         case SpotType.bucket:
-           spotLabel = "B${displayIndex + 1}.";
-           break;
+         case SpotType.regular: spotLabel = "${displayIndex + 1}."; break;
+         case SpotType.waitlist: spotLabel = "W${displayIndex + 1}."; break;
+         case SpotType.bucket: spotLabel = "B${displayIndex + 1}."; break;
        }
 
-      Widget trailingWidget = SizedBox(width: 60);
+      Widget trailingWidget = SizedBox(width: 60); // Placeholder for alignment
       if (isSelectedByMe) {
         trailingWidget = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: Icon(Icons.check_circle, color: Colors.green),
-              onPressed: _isProcessing ? null : _confirmSelection,
-              tooltip: 'Confirm Spot',
-            ),
-            IconButton(
-              icon: Icon(Icons.cancel, color: Colors.red),
-              onPressed: _isProcessing ? null : _cancelSelection,
-              tooltip: 'Cancel Selection',
-            ),
+            IconButton(icon: Icon(Icons.check_circle, color: Colors.green), onPressed: _isProcessing ? null : _confirmSelection, tooltip: 'Confirm Spot'),
+            IconButton(icon: Icon(Icons.cancel, color: Colors.red), onPressed: _isProcessing ? null : _cancelSelection, tooltip: 'Cancel Selection'),
           ],
         );
       }
@@ -392,7 +367,6 @@ class _SignupScreenState extends State<SignupScreen> {
         leading: Text(spotLabel, style: TextStyle(fontSize: 16, color: Colors.black54)),
         title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: titleWeight)),
         trailing: trailingWidget,
-        // Pass only necessary parameters to _selectSpot
         onTap: (isAvailable && !_isProcessing) ? () => _selectSpot(spotKey, isAvailable) : null,
         tileColor: isSelectedByMe ? Colors.blue.shade50 : null,
       );
@@ -401,18 +375,9 @@ class _SignupScreenState extends State<SignupScreen> {
          return Dismissible(
             key: ValueKey(spotKey),
             direction: DismissDirection.endToStart,
-            background: Container(
-               color: Colors.red,
-               padding: EdgeInsets.symmetric(horizontal: 20),
-               alignment: Alignment.centerRight,
-               child: Icon(Icons.delete_sweep, color: Colors.white),
-            ),
-            confirmDismiss: (direction) async {
-               return await _showRemoveConfirmationDialog(spotKey);
-            },
-            onDismissed: (direction) {
-               _removeSignup(spotKey);
-            },
+            background: Container(color: Colors.red, padding: EdgeInsets.symmetric(horizontal: 20), alignment: Alignment.centerRight, child: Icon(Icons.delete_sweep, color: Colors.white)),
+            confirmDismiss: (direction) async => await _showRemoveConfirmationDialog(spotKey),
+            onDismissed: (direction) { _removeSignup(spotKey); },
             child: listTile,
          );
       } else {
@@ -421,51 +386,28 @@ class _SignupScreenState extends State<SignupScreen> {
     }
 
     // --- Building the list sections (Regular, Waitlist, Bucket) ---
-    // (This part remains the same as before)
-
-    // Add Regular Spots
     if (totalSpots > 0) {
-       listItems.add(Padding(
-         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-         child: Text('Regular Spots', style: Theme.of(context).textTheme.titleMedium),
-       ));
-       for (int i = 0; i < totalSpots; i++) {
-          String key = (i + 1).toString();
-          listItems.add(buildSpotTile(i, SpotType.regular, key));
-       }
+       listItems.add(Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: Text('Regular Spots', style: Theme.of(context).textTheme.titleMedium)));
+       for (int i = 0; i < totalSpots; i++) { listItems.add(buildSpotTile(i, SpotType.regular, (i + 1).toString())); }
        listItems.add(Divider());
     }
-
-
-    // Add Waitlist Spots
     if (totalWaitlist > 0) {
-      listItems.add(Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        child: Text('Waitlist Spots', style: Theme.of(context).textTheme.titleMedium),
-      ));
-      for (int i = 0; i < totalWaitlist; i++) {
-        String key = "W${i + 1}";
-        listItems.add(buildSpotTile(i, SpotType.waitlist, key));
-      }
+      listItems.add(Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: Text('Waitlist Spots', style: Theme.of(context).textTheme.titleMedium)));
+      for (int i = 0; i < totalWaitlist; i++) { listItems.add(buildSpotTile(i, SpotType.waitlist, "W${i + 1}")); }
       listItems.add(Divider());
     }
-
-    // Add Bucket Spots
     if (totalBucket > 0) {
-      listItems.add(Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        child: Text('Bucket Spots', style: Theme.of(context).textTheme.titleMedium),
-      ));
-      for (int i = 0; i < totalBucket; i++) {
-        String key = "B${i + 1}";
-        listItems.add(buildSpotTile(i, SpotType.bucket, key));
-      }
+      listItems.add(Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), child: Text('Bucket Spots', style: Theme.of(context).textTheme.titleMedium)));
+      for (int i = 0; i < totalBucket; i++) { listItems.add(buildSpotTile(i, SpotType.bucket, "B${i + 1}")); }
       listItems.add(Divider());
     }
     // --- End list section building ---
 
-    return ListView(
-      children: listItems,
-    );
+    // Add message if list has no spots defined
+    if (listItems.isEmpty) {
+       return Center(child: Text("This list currently has no spots defined."));
+    }
+
+    return ListView(children: listItems);
   }
 }

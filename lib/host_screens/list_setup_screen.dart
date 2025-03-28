@@ -1,29 +1,30 @@
-// lib/pages/list_setup_screen.dart
-// Renamed from create_list_screen.dart
+// lib/host_screens/list_setup_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Required for input formatters
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:animate_do/animate_do.dart'; // Import animate_do
 
-// Renamed class to match the filename convention
+// Import screen to navigate back to
+import 'created_lists_screen.dart';
+
 class ListSetupScreen extends StatefulWidget {
-  // Updated constructor
   const ListSetupScreen({Key? key}) : super(key: key);
 
   @override
-  // Updated state class name
   _ListSetupScreenState createState() => _ListSetupScreenState();
 }
 
-// Renamed state class
 class _ListSetupScreenState extends State<ListSetupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _listNameController = TextEditingController();
   final _venueNameController = TextEditingController();
-  final _spotsController = TextEditingController(text: '15'); // Default regular spots
-  final _waitlistController = TextEditingController(text: '0'); // Default waitlist spots
-  final _bucketController = TextEditingController(text: '0'); // Default bucket spots
+  final _spotsController = TextEditingController(text: '15');
+  final _waitlistController = TextEditingController(text: '0');
+  final _bucketController = TextEditingController(text: '0');
+  // Optional: Controller for State field
+  // final _stateController = TextEditingController();
 
   bool _isLoading = false;
 
@@ -34,74 +35,51 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
     _spotsController.dispose();
     _waitlistController.dispose();
     _bucketController.dispose();
+    // _stateController.dispose(); // Dispose if added
     super.dispose();
   }
 
   Future<void> _createList() async {
-    // Validate form inputs
-    if (!_formKey.currentState!.validate()) {
-      return; // If validation fails, do nothing
-    }
-
-    // Check if user is logged in
+    if (!_formKey.currentState!.validate()) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: You must be logged in to create a list.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: You must be logged in.')));
       return;
     }
-
-    setState(() {
-      _isLoading = true; // Show loading indicator
-    });
-
+    setState(() { _isLoading = true; });
     try {
-      // Parse spot numbers safely
       final int numberOfSpots = int.tryParse(_spotsController.text) ?? 0;
       final int numberOfWaitlistSpots = int.tryParse(_waitlistController.text) ?? 0;
       final int numberOfBucketSpots = int.tryParse(_bucketController.text) ?? 0;
+      // final String stateValue = _stateController.text.trim().toUpperCase();
 
-      // Prepare data for Firestore
       final Map<String, dynamic> listData = {
         'listName': _listNameController.text.trim(),
         'venueName': _venueNameController.text.trim(),
         'numberOfSpots': numberOfSpots,
         'numberOfWaitlistSpots': numberOfWaitlistSpots,
         'numberOfBucketSpots': numberOfBucketSpots,
-        'userId': user.uid, // Store the ID of the user creating the list
+        'userId': user.uid,
         'createdAt': Timestamp.now(),
-        'spots': {}, // Initialize with an EMPTY map for signups
+        'spots': {},
+        'signedUpUserIds': [],
+        // if (stateValue.isNotEmpty) 'state': stateValue,
       };
-
-      // Add the document to the 'Lists' collection
       await FirebaseFirestore.instance.collection('Lists').add(listData);
-
-      // Show success message and navigate back
-      if (mounted) { // Check if the widget is still in the tree
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('List created successfully!')),
-        );
-        Navigator.pop(context); // Go back to the previous screen
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('List created successfully!')));
+        // Navigate back using pushReplacement to avoid stacking screens
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => CreatedListsScreen()));
       }
-
     } catch (e) {
       print("Error creating list: $e");
-      if (mounted) { // Check if the widget is still in the tree
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error creating list: $e')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error creating list: $e')));
     } finally {
-      if (mounted) { // Check if the widget is still in the tree
-        setState(() {
-          _isLoading = false; // Hide loading indicator
-        });
-      }
+      if (mounted) setState(() { _isLoading = false; });
     }
   }
 
-  // Helper for number input fields
+  // Helper for number input fields - Apply reference styling here
   Widget _buildNumberTextField({
     required TextEditingController controller,
     required String label,
@@ -110,27 +88,23 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
       controller: controller,
       decoration: InputDecoration(
         labelText: label,
-        border: OutlineInputBorder(),
-        counterText: "", // Hide the default counter
+        // Apply reference style
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        // Remove focusedBorder if not desired with filled style
+        // focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2.0)),
+        counterText: "",
       ),
       keyboardType: TextInputType.number,
-      inputFormatters: <TextInputFormatter>[
-        FilteringTextInputFormatter.digitsOnly // Allow only digits
-      ],
-      maxLength: 3, // Limit input length (e.g., max 999 spots)
+      inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+      maxLength: 3,
       validator: (value) {
-        if (value == null || value.isEmpty) {
-          // Allow empty (defaults to 0), but could make it required if needed
-          return null; // Treat empty as 0
-        }
+        if (value == null || value.isEmpty) return null;
         final number = int.tryParse(value);
-        if (number == null) {
-          return 'Please enter a valid number';
-        }
-        if (number < 0) {
-          return 'Number cannot be negative';
-        }
-        return null; // Input is valid
+        if (number == null) return 'Please enter a valid number';
+        if (number < 0) return 'Number cannot be negative';
+        return null;
       },
     );
   }
@@ -138,84 +112,135 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Using reference AppBar color
+    final Color appBarColor = Colors.blue.shade400;
+    // Using reference Button color
+    final Color buttonColor = Colors.blue.shade600;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Setup New List'), // Updated title
-        // Match theme from signup_screen example
-        backgroundColor: Theme.of(context).primaryColor,
-        foregroundColor: Colors.white,
+        // Use reference style
+        backgroundColor: appBarColor,
+        elevation: 0, // Remove shadow like reference
+        foregroundColor: Colors.white, // Ensure icons/text are visible
+        title: const Text('Setup New List'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            // Navigate back using pushReplacement
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => CreatedListsScreen()),
+            );
+          },
+        ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      // Apply gradient background from reference
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+            colors: [Colors.blue.shade200, Colors.purple.shade100],
+          ),
+        ),
         child: Form(
           key: _formKey,
-          child: ListView( // Use ListView to prevent overflow on smaller screens
-            children: <Widget>[
-              // List Name Field
-              TextFormField(
-                controller: _listNameController,
-                decoration: InputDecoration(
-                  labelText: 'List Name',
-                  hintText: 'e.g., Tuesday Open Mic',
-                  border: OutlineInputBorder(),
+          child: ListView(
+            padding: const EdgeInsets.all(16.0),
+            children: [
+              // Apply FadeInDown animation and reference style
+              FadeInDown(
+                duration: const Duration(milliseconds: 500),
+                child: TextFormField(
+                  controller: _listNameController,
+                  decoration: InputDecoration(
+                    labelText: 'List Name',
+                    hintText: 'e.g., Tuesday Open Mic',
+                    filled: true, // Reference style
+                    fillColor: Colors.white.withOpacity(0.8), // Reference style
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), // Reference style
+                  ),
+                  validator: (value) => (value == null || value.trim().isEmpty) ? 'Please enter a list name' : null,
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter a list name';
-                  }
-                  return null;
-                },
               ),
-              SizedBox(height: 16.0),
+              const SizedBox(height: 16),
 
-              // Venue Name Field
-              TextFormField(
-                controller: _venueNameController,
-                decoration: InputDecoration(
-                  labelText: 'Venue Name',
-                  hintText: 'e.g., The Coffee House',
-                  border: OutlineInputBorder(),
+              // Apply FadeInDown animation and reference style
+              FadeInDown(
+                duration: const Duration(milliseconds: 600),
+                child: TextFormField(
+                  controller: _venueNameController,
+                  decoration: InputDecoration(
+                    labelText: 'Venue Name',
+                    hintText: 'e.g., The Coffee House',
+                    filled: true, // Reference style
+                    fillColor: Colors.white.withOpacity(0.8), // Reference style
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), // Reference style
+                  ),
+                  validator: (value) => (value == null || value.trim().isEmpty) ? 'Please enter a venue name' : null,
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter a venue name';
-                  }
-                  return null;
-                },
               ),
-              SizedBox(height: 24.0), // Add more space before spot numbers
+              const SizedBox(height: 16),
 
-              // Spot Number Fields
-              _buildNumberTextField(
-                controller: _spotsController,
-                label: 'Number of Regular Spots',
+              // Optional: State Field with animation and style
+              /*
+              FadeInDown(
+                duration: const Duration(milliseconds: 700),
+                child: TextFormField(
+                  controller: _stateController,
+                  decoration: InputDecoration(
+                    labelText: 'State Abbreviation', hintText: 'e.g., CA (for search)',
+                    filled: true, fillColor: Colors.white.withOpacity(0.8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  maxLength: 2, textCapitalization: TextCapitalization.characters,
+                ),
               ),
-              SizedBox(height: 16.0),
+              const SizedBox(height: 24),
+              */
+              const SizedBox(height: 24), // Adjust spacing if state field is added/removed
 
-              _buildNumberTextField(
-                controller: _waitlistController,
-                label: 'Number of Waitlist Spots',
+              // Apply FadeInDown animation to number fields
+              FadeInDown(
+                duration: const Duration(milliseconds: 800), // Adjust duration as needed
+                child: _buildNumberTextField(controller: _spotsController, label: 'Number of Regular Spots'),
               ),
-              SizedBox(height: 16.0),
+              const SizedBox(height: 16),
 
-              _buildNumberTextField(
-                controller: _bucketController,
-                label: 'Number of Bucket Spots',
+              FadeInDown(
+                duration: const Duration(milliseconds: 900), // Adjust duration
+                child: _buildNumberTextField(controller: _waitlistController, label: 'Number of Waitlist Spots'),
               ),
-              SizedBox(height: 32.0), // Space before the button
+              const SizedBox(height: 16),
 
-              // Submit Button
+              FadeInDown(
+                duration: const Duration(milliseconds: 1000), // Adjust duration
+                child: _buildNumberTextField(controller: _bucketController, label: 'Number of Bucket Spots'),
+              ),
+              const SizedBox(height: 32), // Space before the button
+
+              // Apply ElasticIn animation and reference style to button
               _isLoading
-                  ? Center(child: CircularProgressIndicator()) // Show loading indicator
-                  : ElevatedButton(
-                      onPressed: _createList,
-                      child: Text('Create List'),
-                      style: ElevatedButton.styleFrom(
-                        // Use primary color for button, match theme
-                        backgroundColor: Theme.of(context).primaryColor,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 12.0),
-                        textStyle: TextStyle(fontSize: 16),
+                  ? Center(child: CircularProgressIndicator(color: buttonColor)) // Use button color for consistency
+                  : ElasticIn( // Apply animation from reference
+                      duration: const Duration(milliseconds: 800),
+                      child: ElevatedButton(
+                        onPressed: _createList,
+                        // Apply reference style
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16), // Reference padding
+                          backgroundColor: buttonColor, // Reference color
+                          foregroundColor: Colors.white, // Ensure text is white
+                          shape: RoundedRectangleBorder( // Keep consistent button shape if desired, or remove for default
+                             borderRadius: BorderRadius.circular(10.0) // Match input field radius
+                          )
+                        ),
+                        child: const Text(
+                          'Create List',
+                          // Apply reference text style
+                          style: TextStyle(fontSize: 18, color: Colors.white)
+                        ),
                       ),
                     ),
             ],
