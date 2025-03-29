@@ -1,10 +1,10 @@
-// host_screen/created_lists_screen.dart
+// lib/host_screens/created_lists_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:animate_do/animate_do.dart'; // Import animate_do
+import 'package:animate_do/animate_do.dart';
 
 // Import necessary screens
 import 'list_setup_screen.dart';
@@ -17,27 +17,24 @@ class CreatedListsScreen extends StatelessWidget {
 
   final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
-  // --- Function to handle switching role ---
   Future<void> _switchRole(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_role');
+    if (!context.mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (context) => RoleSelectionScreen()),
     );
   }
-  // --- End Function ---
 
   @override
   Widget build(BuildContext context) {
-    // Colors from reference style
     final Color appBarColor = Colors.blue.shade400;
-    // Use appBarColor for FAB as well for consistency, or buttonColor if preferred
-    final Color fabColor = appBarColor; // Or Colors.blue.shade600;
+    final Color fabColor = appBarColor;
 
-    // Handle case where user is somehow null
     if (currentUserId == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => RegistrationScreen()),
@@ -49,59 +46,24 @@ class CreatedListsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        // Apply reference style
-        backgroundColor: appBarColor,
-        elevation: 0,
-        foregroundColor: Colors.white,
-        title: Text('Created Lists'),
-        actions: [
-          Tooltip(
-            message: 'Switch Role',
-            child: IconButton(
-              icon: Icon(Icons.switch_account),
-              onPressed: () => _switchRole(context),
-            ),
-          ),
-        ],
+         backgroundColor: appBarColor, elevation: 0, foregroundColor: Colors.white,
+         title: Text('Created Lists'),
+         actions: [ Tooltip(message: 'Switch Role', child: IconButton(icon: Icon(Icons.switch_account), onPressed: () => _switchRole(context)))],
       ),
-      // Apply gradient background from reference
       body: Container(
-        width: double.infinity,
-        height: double.infinity,
+        width: double.infinity, height: double.infinity,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [Colors.blue.shade200, Colors.purple.shade100],
-          ),
+           gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Colors.blue.shade200, Colors.purple.shade100]),
         ),
-        // StreamBuilder content goes inside the gradient container
         child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('Lists')
-              .where('userId', isEqualTo: currentUserId)
-              .orderBy('createdAt', descending: true)
-              .snapshots(),
+          stream: FirebaseFirestore.instance.collection('Lists').where('userId', isEqualTo: currentUserId).orderBy('createdAt', descending: true).snapshots(),
           builder: (context, snapshot) {
-            // Handle loading state
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              // Make loading indicator visible on gradient
-              return Center(child: CircularProgressIndicator(color: appBarColor));
-            }
-            // Handle errors
-            if (snapshot.hasError) {
-              print("Error fetching lists: ${snapshot.error}");
-              // Make error text visible
-              return Center(child: Text('Error loading lists.', style: TextStyle(color: Colors.red.shade900)));
-            }
-            // Handle no data case
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              // Make text visible
-              return Center(child: Text('You haven\'t created any lists yet.', style: TextStyle(color: Colors.black54, fontSize: 16)));
-            }
+            if (snapshot.connectionState == ConnectionState.waiting) return Center(child: CircularProgressIndicator(color: appBarColor));
+            if (snapshot.hasError) return Center(child: Text('Error loading lists.', style: TextStyle(color: Colors.red.shade900)));
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return Center(child: Text('You haven\'t created any lists yet.', style: TextStyle(color: Colors.black54, fontSize: 16)));
 
-            // Data is available, build the list view
             return ListView.builder(
+              padding: EdgeInsets.only(top: 8.0, bottom: 80.0),
               itemCount: snapshot.data!.docs.length,
               itemBuilder: (context, index) {
                 final doc = snapshot.data!.docs[index];
@@ -109,49 +71,80 @@ class CreatedListsScreen extends StatelessWidget {
                 final String docId = doc.id;
 
                 if (listData == null) {
-                  // Add animation to error tile as well
-                  return FadeInUp(
-                     delay: Duration(milliseconds: 100 * index), // Stagger animation
-                     child: Card(
-                       margin: EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                       child: ListTile(title: Text('Error loading list data')),
-                     )
-                  );
+                   return FadeInUp(delay: Duration(milliseconds: 100 * index), child: Card(margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0), child: ListTile(title: Text('Error loading list data'))));
                 }
 
-                // Calculate Filled vs Total Spots
+                // --- Calculate Filled Counts for Each Type ---
                 final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
-                final filledSpotsCount = spotsMap.values.whereType<Map>().length;
-                final regularSpots = (listData['numberOfSpots'] ?? 0) as int;
-                final waitlistSpots = (listData['numberOfWaitlistSpots'] ?? 0) as int;
-                final bucketSpots = (listData['numberOfBucketSpots'] ?? 0) as int;
-                final totalSpots = regularSpots + waitlistSpots + bucketSpots;
+                int filledRegular = 0;
+                int filledWaitlist = 0;
+                int filledBucket = 0;
+
+                spotsMap.forEach((key, value) {
+                   if (value is Map) { // Only count actual performer signups
+                      if (key.startsWith('W')) filledWaitlist++;
+                      else if (key.startsWith('B')) filledBucket++;
+                      else if (int.tryParse(key) != null) filledRegular++;
+                   }
+                });
+
+                final totalRegular = (listData['numberOfSpots'] ?? 0) as int;
+                final totalWaitlist = (listData['numberOfWaitlistSpots'] ?? 0) as int;
+                final totalBucket = (listData['numberOfBucketSpots'] ?? 0) as int;
+                // --- End Calculation ---
 
                 // Apply animation to each list item Card
                 return FadeInUp(
-                  delay: Duration(milliseconds: 100 * index), // Stagger animation
-                  duration: const Duration(milliseconds: 400), // Control speed
+                  delay: Duration(milliseconds: 100 * index),
+                  duration: const Duration(milliseconds: 400),
                   child: Card(
-                    // Style Card to look good on gradient (optional: add opacity/elevation)
-                    color: Colors.white.withOpacity(0.9), // Slightly transparent card
+                    color: Colors.white.withOpacity(0.9),
                     elevation: 3,
-                    margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0), // Adjust margin
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), // Match input radius
-                    child: ListTile(
-                      title: Text(listData['listName'] ?? 'Unnamed List', style: TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(listData['venueName'] ?? 'No Venue'),
-                      trailing: Text(
-                        'Spots: $filledSpotsCount/$totalSpots',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                      ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ShowListScreen(listId: docId),
-                          ),
-                        );
-                      },
+                    margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    // Use InkWell for onTap effect on the Card
+                    child: InkWell(
+                       borderRadius: BorderRadius.circular(10),
+                       onTap: () {
+                         // Navigate to ShowListScreen using listId
+                         Navigator.push(context, MaterialPageRoute(builder: (context) => ShowListScreen(listId: docId)));
+                       },
+                       child: Padding(
+                         padding: const EdgeInsets.all(16.0),
+                         child: Column(
+                           crossAxisAlignment: CrossAxisAlignment.start,
+                           children: [
+                             // List Name (Larger)
+                             Text(
+                               listData['listName'] ?? 'Unnamed List',
+                               style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 18), // Adjusted style
+                             ),
+                             SizedBox(height: 4),
+                             // Venue Name (Smaller)
+                             Text(
+                               listData['venueName'] ?? 'No Venue',
+                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black54), // Adjusted style
+                             ),
+                             SizedBox(height: 12),
+                             // Counts Section
+                             if (totalRegular > 0)
+                               Padding(
+                                 padding: const EdgeInsets.only(top: 4.0),
+                                 child: Text('Regular Spots: $filledRegular/$totalRegular', style: TextStyle(fontWeight: FontWeight.w500)),
+                               ),
+                             if (totalWaitlist > 0)
+                               Padding(
+                                 padding: const EdgeInsets.only(top: 4.0),
+                                 child: Text('Waitlist Spots: $filledWaitlist/$totalWaitlist', style: TextStyle(fontWeight: FontWeight.w500)),
+                               ),
+                             if (totalBucket > 0)
+                               Padding(
+                                 padding: const EdgeInsets.only(top: 4.0),
+                                 child: Text('Bucket Spots: $filledBucket/$totalBucket', style: TextStyle(fontWeight: FontWeight.w500)),
+                               ),
+                           ],
+                         ),
+                       ),
                     ),
                   ),
                 );
@@ -160,22 +153,13 @@ class CreatedListsScreen extends StatelessWidget {
           },
         ),
       ),
-      // Apply animation and style to FAB
-      floatingActionButton: FadeInUp( // Animate FAB
-        delay: Duration(milliseconds: 500), // Delay slightly after list items
-        child: FloatingActionButton(
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => ListSetupScreen()),
-            );
-          },
-          // Apply reference style
-          backgroundColor: fabColor,
-          foregroundColor: Colors.white,
-          tooltip: 'Create New List',
-          child: Icon(Icons.add),
-        ),
+      floatingActionButton: FadeInUp(
+         delay: Duration(milliseconds: 500),
+         child: FloatingActionButton(
+           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ListSetupScreen())),
+           backgroundColor: fabColor, foregroundColor: Colors.white,
+           tooltip: 'Create New List', child: Icon(Icons.add),
+         ),
       ),
     );
   }
