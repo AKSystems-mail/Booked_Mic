@@ -148,7 +148,7 @@ class CreatedListsScreen extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => ShowListScreen(showId: docId),
+                            builder: (context) => ShowListScreen(listId: docId),
                           ),
                         );
                       },
