@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:animate_do/animate_do.dart'; // Import animate_do
+import 'package:flutter/foundation.dart';
 
 // Import the screen to navigate to after successful login/signup
 import 'role_selection_screen.dart';
@@ -21,7 +22,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   // These ARE used by the restored functions below
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    // Provide the clientId ONLY for the web platform
+    clientId: kIsWeb
+      ? '     1049808440381-5urihcc0q51vcqt1h4ikgg3acp64tdrs.apps.googleusercontent.com ' // <-- PASTE YOUR ACTUAL WEB CLIENT ID HERE
+      : null, // Pass null for non-web platforms (like Android/iOS)
+  );
 
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();

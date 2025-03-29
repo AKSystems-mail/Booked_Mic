@@ -14,7 +14,15 @@
       },
       "oauth_client": [
         {
-          "client_id": "1049808440381-eos1pkbkq77hub5810itqm8rnis7uqb1.apps.googleusercontent.com",
+          "client_id": "1049808440381-fmogcudramlhoaoivphm7ffb6po7k8os.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.bookedmic.app",
+            "certificate_hash": "400de3db3d4ee513b99308faf2f2569f6aac11ab"
+          }
+        },
+        {
+          "client_id": "1049808440381-5urihcc0q51vcqt1h4ikgg3acp64tdrs.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
@@ -27,7 +35,7 @@
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "1049808440381-eos1pkbkq77hub5810itqm8rnis7uqb1.apps.googleusercontent.com",
+              "client_id": "1049808440381-5urihcc0q51vcqt1h4ikgg3acp64tdrs.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
@@ -36,14 +44,14 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1049808440381:android:ab0cab31edfd335a70ee54",
+        "mobilesdk_app_id": "1:1049808440381:android:ae8a666867df29db70ee54",
         "android_client_info": {
           "package_name": "com.example.myapp"
         }
       },
       "oauth_client": [
         {
-          "client_id": "1049808440381-eos1pkbkq77hub5810itqm8rnis7uqb1.apps.googleusercontent.com",
+          "client_id": "1049808440381-5urihcc0q51vcqt1h4ikgg3acp64tdrs.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
@@ -56,7 +64,7 @@
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "1049808440381-eos1pkbkq77hub5810itqm8rnis7uqb1.apps.googleusercontent.com",
+              "client_id": "1049808440381-5urihcc0q51vcqt1h4ikgg3acp64tdrs.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
