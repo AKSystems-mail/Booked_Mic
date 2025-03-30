@@ -48,7 +48,7 @@ class RoleSelectionScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     // Colors from reference style
     final Color appBarColor = Colors.blue.shade400;
-    final Color buttonColor = Colors.blue.shade600;
+    final Color buttonColor = const Color.fromARGB(255, 108, 28, 133);
 
     // --- Button Style Helper (Updated to match reference) ---
     ButtonStyle _buttonStyle() {
