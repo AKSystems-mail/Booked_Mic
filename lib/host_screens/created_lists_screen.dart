@@ -69,7 +69,7 @@ class CreatedListsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
          backgroundColor: appBarColor, elevation: 0, foregroundColor: Colors.white,
-         title: Text('My Created Lists (Host)'),
+         title: Text('Created Lists'),
          actions: [ Tooltip(message: 'Switch Role', child: IconButton(icon: Icon(Icons.sync_alt, size: 28.0), onPressed: () => _switchRole(context))) ],
       ),
       body: Container(

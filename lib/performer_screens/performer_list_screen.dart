@@ -257,10 +257,10 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     return Scaffold(
       appBar: AppBar(
          backgroundColor: appBarColor, elevation: 0, foregroundColor: Colors.white,
-         title: Text(_selectedSearchState == null ? 'My Signups' : 'Open Lists: $_selectedSearchState'),
+         title: Text(_selectedSearchState == null ? 'Lists I Am On' : 'Open Lists: $_selectedSearchState'),
          actions: [
             Tooltip(message: _selectedSearchState == null ? 'Search by State' : 'Clear Search ($_selectedSearchState)', child: IconButton(icon: Icon(Icons.search), onPressed: _toggleSearch)),
-            Tooltip(message: 'Switch Role', child: IconButton(icon: Icon(Icons.switch_account), onPressed: () => _switchRole(context))),
+            Tooltip(message: 'Switch Role', child: IconButton(icon: Icon(Icons.sync_alt, size: 28.0), onPressed: () => _switchRole(context))),
          ],
       ),
       body: Container(
