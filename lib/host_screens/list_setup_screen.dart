@@ -10,7 +10,7 @@ import 'package:google_places_flutter/google_places_flutter.dart'; // Import Goo
 import 'package:google_places_flutter/model/prediction.dart'; // Import Prediction model
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // Import dotenv
 
-import 'created_lists_screen.dart';
+import 'created_lists_screen.dart'; // Assuming this path is correct
 
 class ListSetupScreen extends StatefulWidget {
   const ListSetupScreen({Key? key}) : super(key: key);
@@ -37,7 +37,16 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   bool _isLoading = false;
 
   // Get API Key from .env
-  final String googleApiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? 'MISSING_API_KEY';
+  // This is initialized when the State object is created.
+  final String googleApiKey = dotenv.env['GOOGLE_PLACES_API_KEY'] ?? 'MISSING_API_KEY';
+
+  @override
+  void initState() {
+    super.initState();
+    // You could also add a print here, but the build method check is robust.
+    // print("DEBUG initState: Initial googleApiKey value = $googleApiKey");
+  }
+
 
   @override
   void dispose() {
@@ -51,8 +60,8 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
 
   Future<void> _selectDate(BuildContext context) async {
      final DateTime? picked = await showDatePicker(
-         context: context, initialDate: _selectedDate ?? DateTime.now(),
-         firstDate: DateTime.now().subtract(Duration(days: 1)), lastDate: DateTime.now().add(Duration(days: 365 * 2)),
+        context: context, initialDate: _selectedDate ?? DateTime.now(),
+        firstDate: DateTime.now().subtract(Duration(days: 1)), lastDate: DateTime.now().add(Duration(days: 365 * 2)),
      );
      if (picked != null && picked != _selectedDate) setState(() => _selectedDate = picked);
   }
@@ -72,8 +81,10 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
         final parts = prediction.structuredFormatting!.secondaryText!.split(', ');
         if (parts.length >= 2) {
            final statePart = parts[parts.length - 2]; // Often State + ZIP
-           if (statePart.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(statePart)) {
-              return statePart.toUpperCase();
+           // Refined check for 2 letters only, trimming potential whitespace
+           final trimmedStatePart = statePart.trim();
+           if (trimmedStatePart.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(trimmedStatePart)) {
+              return trimmedStatePart.toUpperCase();
            }
         }
      }
@@ -85,52 +96,58 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   Future<void> _createList() async {
     // --- Updated Validation ---
     if (_selectedAddressDescription == null || _selectedAddressDescription!.isEmpty) {
-       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select a valid address using the search.')));
-       return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select a valid address using the search.')));
+        return;
     }
      if (_selectedStateAbbr == null) { // Check if state was extracted
-       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not determine state from selected address. Please try a different address format.'), backgroundColor: Colors.orange));
-       return;
-    }
-    if (_selectedDate == null) { /* ... Date validation ... */ return; }
-    if (!_formKey.currentState!.validate()) return; // Validate other fields (name, spots)
-    // --- End Validation ---
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not determine state from selected address. Please try a different address format.'), backgroundColor: Colors.orange));
+        return;
+     }
+     if (_selectedDate == null) {
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select a date for the list.')));
+         return;
+     }
+     if (!_formKey.currentState!.validate()) return; // Validate other fields (name, spots)
+     // --- End Validation ---
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) { /* ... User validation ... */ return; }
+     final user = FirebaseAuth.instance.currentUser;
+     if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: No user logged in.')));
+        return;
+     }
 
-    setState(() { _isLoading = true; });
-    try {
-      final int numberOfSpots = int.tryParse(_spotsController.text) ?? 0;
-      final int numberOfWaitlistSpots = int.tryParse(_waitlistController.text) ?? 0;
-      final int numberOfBucketSpots = int.tryParse(_bucketController.text) ?? 0;
+     setState(() { _isLoading = true; });
+     try {
+        final int numberOfSpots = int.tryParse(_spotsController.text) ?? 0;
+        final int numberOfWaitlistSpots = int.tryParse(_waitlistController.text) ?? 0;
+        final int numberOfBucketSpots = int.tryParse(_bucketController.text) ?? 0;
 
-      final Map<String, dynamic> listData = {
-        'listName': _listNameController.text.trim(),
-        'address': _selectedAddressDescription!,
-        'state': _selectedStateAbbr!, // Use extracted state
-        'latitude': _selectedLat, // May be null if not returned by API
-        'longitude': _selectedLng, // May be null if not returned by API
-        'date': Timestamp.fromDate(_selectedDate!),
-        'numberOfSpots': numberOfSpots,
-        'numberOfWaitlistSpots': numberOfWaitlistSpots,
-        'numberOfBucketSpots': numberOfBucketSpots,
-        'userId': user.uid,
-        'createdAt': Timestamp.now(),
-        'spots': {},
-        'signedUpUserIds': [],
-      };
-      await FirebaseFirestore.instance.collection('Lists').add(listData);
-      if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('List created successfully!')));
-         Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => CreatedListsScreen()));
-      }
-    } catch (e) {
-      print("Error creating list: $e");
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error creating list: $e')));
-    } finally {
-      if (mounted) setState(() { _isLoading = false; });
-    }
+        final Map<String, dynamic> listData = {
+          'listName': _listNameController.text.trim(),
+          'address': _selectedAddressDescription!,
+          'state': _selectedStateAbbr!, // Use extracted state
+          'latitude': _selectedLat, // May be null if not returned by API
+          'longitude': _selectedLng, // May be null if not returned by API
+          'date': Timestamp.fromDate(_selectedDate!),
+          'numberOfSpots': numberOfSpots,
+          'numberOfWaitlistSpots': numberOfWaitlistSpots,
+          'numberOfBucketSpots': numberOfBucketSpots,
+          'userId': user.uid,
+          'createdAt': Timestamp.now(),
+          'spots': {}, // Initialize spots map
+          'signedUpUserIds': [], // Initialize user IDs list
+        };
+        await FirebaseFirestore.instance.collection('Lists').add(listData);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('List created successfully!')));
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => CreatedListsScreen()));
+        }
+     } catch (e) {
+        print("Error creating list: $e");
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error creating list: $e')));
+     } finally {
+        if (mounted) setState(() { _isLoading = false; });
+     }
   }
 
   Widget _buildNumberTextField({ required TextEditingController controller, required String label }) {
@@ -143,21 +160,26 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
     final Color buttonColor = Colors.blue.shade600;
     final Color labelColor = Colors.grey.shade800;
 
-    // Check if API key is missing and show a warning overlay if it is
+    // Check if API key is missing and decide what content to show
     Widget bodyContent;
     if (googleApiKey == 'MISSING_API_KEY') {
-       bodyContent = Center(
+      // *** DEBUG PRINT STATEMENT ADDED ***
+      print("FATAL ERROR: GOOGLE_PLACES_API_KEY key not found or empty in .env file! Using default 'MISSING_API_KEY'.");
+      bodyContent = Center(
           child: Padding(
              padding: const EdgeInsets.all(20.0),
              child: Text(
-                'ERROR: GOOGLE_MAPS_API_KEY is missing in your .env file. Address search will not work.',
+                'ERROR: GOOGLE_PLACES_API_KEY is missing in your .env file. Address search will not work.',
                 style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16),
                 textAlign: TextAlign.center,
              ),
           ),
-       );
+      );
     } else {
-       bodyContent = Form(
+      // *** DEBUG PRINT STATEMENT ADDED ***
+      // This confirms the key *should* be valid if it reaches this point.
+      print("DEBUG: Runtime key value loaded and being used: $googleApiKey");
+      bodyContent = Form(
           key: _formKey,
           child: ListView(
              padding: const EdgeInsets.all(16.0),
@@ -171,7 +193,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                    duration: const Duration(milliseconds: 600),
                    child: GooglePlaceAutoCompleteTextField(
                       textEditingController: _addressController,
-                      googleAPIKey: googleApiKey,
+                      googleAPIKey: dotenv.env['GOOGLE_PLACES_API_KEY']!, // Pass the loaded key here
                       inputDecoration: InputDecoration(
                          labelText: "Address / Venue", labelStyle: TextStyle(color: labelColor),
                          hintText: "Search Address or Venue", hintStyle: TextStyle(color: Colors.grey.shade500),
@@ -196,8 +218,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                       itemClick: (Prediction prediction) {
                          _addressController.text = prediction.description ?? '';
                          _addressController.selection = TextSelection.fromPosition(TextPosition(offset: prediction.description?.length ?? 0));
-                         // Trigger detail fetch again in case user just clicks without waiting for details
-                         // This might be redundant depending on package behavior, test needed
+                         // Potential TODO: Check if you still need to manually call getPlaceDetailWithLatLng here or if the package handles it on click. Often it does.
                          // getPlaceDetailWithLatLng(prediction);
                       },
                    ),
@@ -223,15 +244,15 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                 _isLoading ? Center(child: CircularProgressIndicator(color: buttonColor)) : ElasticIn(duration: const Duration(milliseconds: 800), delay: const Duration(milliseconds: 200), child: ElevatedButton(onPressed: _createList, style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: buttonColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0))), child: const Text('Create List', style: TextStyle(fontSize: 18, color: Colors.white)))),
              ],
           ),
-       );
+      );
     }
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: appBarColor, elevation: 0, foregroundColor: Colors.white,
-        iconTheme: IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: Colors.white), // Ensure back arrow is white
         title: const Text('Setup New List', style: TextStyle(color: Colors.white)),
-        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => CreatedListsScreen()))),
+        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => CreatedListsScreen()))), // Ensure navigation uses the correct screen if needed
       ),
       body: Container(
         width: double.infinity, height: double.infinity,
