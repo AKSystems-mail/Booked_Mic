@@ -7,15 +7,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:collection/collection.dart'; // Import for MapEquality
+import 'package:permission_handler/permission_handler.dart';
+import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 
 // Import necessary screens
-import '../../role_selection_screen.dart'; // Adjusted path
+import '../../role_selection_screen.dart';
 import 'signup_screen.dart';
-import '../../registration_screen.dart'; // Adjusted path
-import '../../main.dart'; // Import main to access the global plugin instance
+import '../../registration_screen.dart';
+// Import main to access the global plugin instance
 
-// --- REMOVED Incorrect Declaration ---
-// extern final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
+// Access the global instance from main.dart
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
 
 class PerformerListScreen extends StatefulWidget {
   PerformerListScreen({Key? key}) : super(key: key);
@@ -26,12 +29,11 @@ class PerformerListScreen extends StatefulWidget {
 
 class _PerformerListScreenState extends State<PerformerListScreen> {
   final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
-  // Keep _firestore as it IS used
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   String? _selectedSearchState;
 
-  final List<String> usStates = [ /* ... List of states ... */
+  final List<String> usStates = [
     'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
     'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
     'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
@@ -42,16 +44,13 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
 
-  // --- REMOVED unused local notification plugin variable ---
-  // late final FlutterLocalNotificationsPlugin _notificationsPlugin;
+  late final FlutterLocalNotificationsPlugin _notificationsPlugin;
 
   @override
   void initState() {
     super.initState();
-    // --- REMOVED assignment to local variable ---
-    // _notificationsPlugin = flutterLocalNotificationsPlugin;
+    _notificationsPlugin = flutterLocalNotificationsPlugin;
   }
-
 
   @override
   void dispose() {
@@ -59,7 +58,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     super.dispose();
   }
 
-  // Keep _switchRole - used by AppBar action
   Future<void> _switchRole(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_role');
@@ -90,7 +88,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     }
   }
 
-  // Keep _toggleSearch - used by AppBar action
   void _toggleSearch() {
      if (_selectedSearchState == null) {
         _showStateSearchDialog();
@@ -99,27 +96,18 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
      }
   }
 
-  // --- Helper to Show Local Notification ---
-  // Keep _showPositionNotification - used by _updateAndNotifyPositions
   Future<void> _showPositionNotification(String listId, String listName, int positionIndex) async {
      String body = "";
      if (positionIndex == 0) body = "You're up next!";
      else if (positionIndex == 1) body = "1 performer ahead of you.";
      else body = "$positionIndex performers ahead of you.";
-
      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails('list_position_channel', 'List Position Updates', channelDescription: 'Notifications about your position in performance lists', importance: Importance.max, priority: Priority.high, ticker: 'ticker');
      const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(presentSound: true, presentBadge: true, presentAlert: true);
      const NotificationDetails platformDetails = NotificationDetails(android: androidDetails, iOS: iosDetails);
-
-     // --- Use the global instance directly ---
-     await flutterLocalNotificationsPlugin.show(listId.hashCode, 'Update: $listName', body, platformDetails, payload: listId);
-     // --- End Use global instance ---
+     await _notificationsPlugin.show(listId.hashCode, 'Update: $listName', body, platformDetails, payload: listId);
      print("Local notification shown for $listId: $body");
   }
-  // --- End Helper ---
 
-  // --- Position Calculation & Notification Logic ---
-  // Keep _updateAndNotifyPositions - called by StreamBuilder
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs) {
      if (!mounted || currentUserId == null) return;
      final today = DateTime.now();
@@ -147,7 +135,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                  if (lastPosition == null || lastPosition != currentPositionIndex) {
                     print("Position change detected for $listId: $lastPosition -> $currentPositionIndex");
                     final String listName = listData['listName'] ?? 'Unnamed List';
-                    _showPositionNotification(listId, listName, currentPositionIndex); // This function IS used
+                    _showPositionNotification(listId, listName, currentPositionIndex);
                  }
               }
            }
@@ -159,21 +147,16 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
      if (!MapEquality().equals(_lastNotifiedPositionNotifier.value, nextNotifierValue)) { print("Updating tracked positions: $nextNotifierValue"); _lastNotifiedPositionNotifier.value = nextNotifierValue; }
      else { print("No change in overall tracked positions."); }
   }
-  // --- End Position Logic ---
-
 
   // --- Widget for Signed-up Lists ---
-  // Keep _buildSignedUpLists - used by build method
   Widget _buildSignedUpLists() {
     if (currentUserId == null) return Center(child: Text("Not logged in.", style: TextStyle(color: Colors.black54)));
-    // This function returns a Widget, so body_might_complete_normally is incorrect warning
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('Lists').where('signedUpUserIds', arrayContains: currentUserId).orderBy('createdAt', descending: true).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) return Center(child: CircularProgressIndicator(color: Colors.blue.shade600));
         if (snapshot.hasError) return Center(child: Text('Error loading your lists: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900)));
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return Center(child: Text('You haven\'t signed up for any lists yet.', style: TextStyle(color: Colors.black54, fontSize: 16)));
-        // Call the function that uses the other unused functions
         WidgetsBinding.instance.addPostFrameCallback((_) => _updateAndNotifyPositions(snapshot.data!.docs));
         return ListView.builder(
           padding: EdgeInsets.only(top: 8.0, bottom: 80.0),
@@ -204,9 +187,8 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   }
 
   // --- Widget for State Search Results ---
-  // Keep _buildSearchResultsBasedOnState - used by build method
+  // This function IS CALLED by the build method when _selectedSearchState is not null
   Widget _buildSearchResultsBasedOnState(String state) {
-     // This function returns a Widget, so body_might_complete_normally is incorrect warning
      return StreamBuilder<QuerySnapshot>(
         stream: _firestore.collection('Lists').where('state', isEqualTo: state.toUpperCase()).orderBy('createdAt', descending: true).snapshots(),
         builder: (context, snapshot) {
@@ -245,10 +227,32 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   }
 
 
+  // --- Updated Function to Handle Scan Button Press ---
+  Future<void> _scanQrCode() async {
+     var status = await Permission.camera.request();
+     if (status.isGranted) {
+        if (!mounted) return;
+        var res = await Navigator.push(context, MaterialPageRoute(builder: (context) => const SimpleBarcodeScannerPage()));
+        if (res is String && res != "-1" && res.isNotEmpty && mounted) {
+           String scannedListId = res;
+           print("QR Scan Result (List ID): $scannedListId");
+           // TODO: Optional: Add Firestore check for list existence
+           Navigator.push(context, MaterialPageRoute(builder: (context) => SignupScreen(listId: scannedListId)));
+        } else { print("Scan cancelled or failed (Result: $res)"); }
+     } else if (status.isPermanentlyDenied && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Camera permission permanently denied. Please enable it in settings.')));
+        await openAppSettings();
+     } else if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Camera permission is required to scan QR codes.')));
+     }
+  }
+  // --- End Scan Function ---
+
+
   @override
   Widget build(BuildContext context) {
     final Color appBarColor = Colors.blue.shade400;
-    final Color fabColor = appBarColor; // Keep fabColor - used by FAB
+    final Color fabColor = appBarColor;
     if (currentUserId == null) {
        WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => RegistrationScreen()), (Route<dynamic> route) => false); });
        return Scaffold(body: Center(child: Text("Redirecting...")));
@@ -257,10 +261,10 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     return Scaffold(
       appBar: AppBar(
          backgroundColor: appBarColor, elevation: 0, foregroundColor: Colors.white,
-         title: Text(_selectedSearchState == null ? 'Lists I Am On' : 'Open Lists: $_selectedSearchState'),
+         title: Text(_selectedSearchState == null ? 'My Signups' : 'Open Lists: $_selectedSearchState'),
          actions: [
             Tooltip(message: _selectedSearchState == null ? 'Search by State' : 'Clear Search ($_selectedSearchState)', child: IconButton(icon: Icon(Icons.search), onPressed: _toggleSearch)),
-            Tooltip(message: 'Switch Role', child: IconButton(icon: Icon(Icons.sync_alt, size: 28.0), onPressed: () => _switchRole(context))),
+            Tooltip(message: 'Switch Role', child: IconButton(icon: Icon(Icons.switch_account), onPressed: () => _switchRole(context))),
          ],
       ),
       body: Container(
@@ -268,12 +272,12 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
          decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Colors.blue.shade200, Colors.purple.shade100])),
          child: _selectedSearchState == null
              ? _buildSignedUpLists()
-             : _buildSearchResultsBasedOnState(_selectedSearchState!),
+             : _buildSearchResultsBasedOnState(_selectedSearchState!), // This function IS used
       ),
       floatingActionButton: FadeInUp(
          delay: Duration(milliseconds: 600),
          child: FloatingActionButton(
-           onPressed: () { /* TODO: Implement QR Code Scanning */ ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('QR Code Scan not implemented yet.'))); },
+           onPressed: _scanQrCode, // This function IS used
            backgroundColor: fabColor, foregroundColor: Colors.white,
            tooltip: 'Scan List QR Code', child: Icon(Icons.qr_code_scanner),
          ),
