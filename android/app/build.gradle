@@ -1,10 +1,8 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
-    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
 }
-apply plugin: 'com.google.gms.google-services'
-
 
 android {
     namespace = "com.bookedmic.app"
@@ -17,31 +15,31 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17
+        jvmTarget = '17'
     }
 
     defaultConfig {
         applicationId "com.bookedmic.app"
         minSdk 24
         targetSdk 35
-        versionCode 1  // You can set a version code here if needed
+        versionCode 1
         versionName "1.0.0 Stable"
     }
 
-signingConfigs {
-    release {
-        storeFile file('keystore.jks')
-        storePassword project.findProperty('KEY_STORE_PASSWORD') ?: ""
-        keyAlias project.findProperty('KEY_ALIAS') ?: ""
-        keyPassword project.findProperty('KEY_PASSWORD') ?: ""
+    signingConfigs {
+        release {
+            storeFile file('keystore.jks')
+            storePassword project.findProperty('KEY_STORE_PASSWORD') ?: ""
+            keyAlias project.findProperty('KEY_ALIAS') ?: ""
+            keyPassword project.findProperty('KEY_PASSWORD') ?: ""
+        }
+        debug {
+            storeFile file('keystore.jks')
+            storePassword project.findProperty('KEY_STORE_PASSWORD') ?: ""
+            keyAlias project.findProperty('KEY_ALIAS') ?: ""
+            keyPassword project.findProperty('KEY_PASSWORD') ?: ""
+        }
     }
-    debug {
-        storeFile file('keystore.jks')
-        storePassword project.findProperty('KEY_STORE_PASSWORD') ?: ""
-        keyAlias project.findProperty('KEY_ALIAS') ?: ""
-        keyPassword project.findProperty('KEY_PASSWORD') ?: ""
-    }
-}
 
     buildTypes {
         release {
@@ -51,20 +49,17 @@ signingConfigs {
                 shrinkResources true
             }
         }
-        debug{
+        debug {
             signingConfig signingConfigs.debug
         }
     }
 }
+
 dependencies {
     implementation platform('com.google.firebase:firebase-bom:32.2.0')
-    // Add the Firebase Authentication dependency
     implementation 'com.google.firebase:firebase-auth'
-    // Optional: Add the Google Play Services Auth dependency for Google Sign-In
     implementation 'com.google.android.gms:play-services-auth:20.6.0'
 }
- 
-
 
 flutter {
     source = "../.."
