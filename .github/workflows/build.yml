@@ -1,0 +1,31 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main" ] # Or your main development branch
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Flutter
+      uses: flutter-actions/setup-flutter@v2
+      with:
+        flutter-version: '3.x.x' # Replace with your desired Flutter version (e.g., '3.10.x')
+
+    - name: Get dependencies
+      run: flutter pub get
+
+    - name: Build APK
+      run: flutter build apk --split-per-abi # This will build APKs for different architectures
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: android-app-release
+        path: build/app/outputs/flutter-apk/release/*.apk
