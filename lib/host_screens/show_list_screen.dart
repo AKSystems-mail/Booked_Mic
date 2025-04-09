@@ -207,22 +207,20 @@ class _ShowListScreenState extends State<ShowListScreen> {
       await TorchLight.enableTorch();
       if (mounted) setState(() => _isFlashlightOn = true);
       print("Flashlight turned ON.");
-    } on EnableTorchEx catch (e) { _handleTorchError("Error enabling torch: ${e.message}"); }
-    catch (e) { _handleTorchError("Unexpected error turning torch on: $e"); }
+    } on Exception catch (e) { _handleTorchError("Error enabling torch: $e"); }
   }
 
   Future<void> _turnFlashlightOff() async {
     try {
-      final bool isTorchAvailable = await TorchLight.isTorchAvailable();
-      if (!isTorchAvailable) return;
+     final bool isTorchAvailable = await TorchLight.isTorchAvailable();
+     if (!isTorchAvailable) return;
       await TorchLight.disableTorch();
       // Check mounted before setState, especially in dispose
       if (mounted) setState(() => _isFlashlightOn = false);
       print("Flashlight turned OFF.");
-    } on DisableTorchEx catch (e) { _handleTorchError("Error disabling torch: ${e.message}"); }
-    catch (e) { _handleTorchError("Unexpected error turning torch off: $e"); }
+    } on Exception catch (e) { _handleTorchError("Error disabling torch: $e"); }
   }
-
+  
   Future<void> _toggleFlashlightButton() async {
      if (_isFlashlightOn) { await _turnFlashlightOff(); }
      else { await _turnFlashlightOn(); }
