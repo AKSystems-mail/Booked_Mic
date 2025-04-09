@@ -1,6 +1,6 @@
 {
-    "name": "myapp",
-    "short_name": "myapp",
+    "name": "Booked Mic",
+    "short_name": "BookedMic",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

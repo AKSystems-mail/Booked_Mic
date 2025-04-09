@@ -1,4 +1,4 @@
-# myapp
+# Booked Mic
 
 A new Flutter project.
 
