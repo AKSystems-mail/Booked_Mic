@@ -62,7 +62,7 @@ class DefaultFirebaseOptions {
     storageBucket: 'bookedmic-1cf9d.firebasestorage.app',
     androidClientId: '1049808440381-fmogcudramlhoaoivphm7ffb6po7k8os.apps.googleusercontent.com',
     iosClientId: '1049808440381-7gebkrrqo9v96chlqob7ukm3oj592fkf.apps.googleusercontent.com',
-    iosBundleId: 'com.bookedmic.myapp',
+    iosBundleId: 'com.bookedmic.app',
   );
 
 }

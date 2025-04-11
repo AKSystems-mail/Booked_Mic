@@ -46,7 +46,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:1049808440381:android:ae8a666867df29db70ee54",
         "android_client_info": {
-          "package_name": "com.example.myapp"
+          "package_name": "com.bookedmic.app"
         }
       },
       "oauth_client": [

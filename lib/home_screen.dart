@@ -35,10 +35,10 @@ class HomeScreen extends StatelessWidget {
                     MaterialPageRoute(builder: (context) => const ListSetupScreen()),
                   );
                 },
-                child: const Text('Host Setup New List'),
                 style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(vertical: buttonSpacing), // Responsive padding
                 ),
+                child: const Text('Host Setup New List'),
               ),
               SizedBox(height: buttonSpacing), // Responsive spacing
               ElevatedButton(
@@ -48,10 +48,10 @@ class HomeScreen extends StatelessWidget {
                     MaterialPageRoute(builder: (context) => const RegistrationScreen()),
                   );
                 },
-                child: const Text('Register/Login'),
                  style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(vertical: buttonSpacing), // Responsive padding
                 ),
+                child: const Text('Register/Login'),
               ),
               SizedBox(height: buttonSpacing), // Responsive spacing
               ElevatedButton(
@@ -60,11 +60,11 @@ class HomeScreen extends StatelessWidget {
                      context,
                      MaterialPageRoute(builder: (context) => PerformerListScreen()), // Changed ScannerScreen to PerformerListScreen
                    );
-                 },
-                 child: const Text('Generate QR Code'), // Consider changing text to 'Scan QR Code'
+                 }, // Consider changing text to 'Scan QR Code'
                   style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(vertical: buttonSpacing), // Responsive padding
                 ),
+                 child: const Text('Generate QR Code'),
               ),
             ],
           ),
