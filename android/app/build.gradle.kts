@@ -6,6 +6,8 @@ plugins {
 }
 
 android {
+    namespace = "com.bookedmic.app"
+    
     compileSdk = flutter.compileSdkVersion
 
     ndkVersion = flutter.ndkVersion
@@ -33,7 +35,6 @@ android {
         versionCode = flutter.versionCode
         
         versionName = flutter.versionName
-        namespace = "com.bookedmic.app"
     }
 
     buildTypes {

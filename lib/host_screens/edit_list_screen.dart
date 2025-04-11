@@ -12,7 +12,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class EditListScreen extends StatefulWidget {
   final String listId;
-  const EditListScreen({Key? key, required this.listId}) : super(key: key);
+  const EditListScreen({super.key, required this.listId});
 
   @override
   _EditListScreenState createState() => _EditListScreenState();

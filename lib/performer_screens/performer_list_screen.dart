@@ -20,7 +20,7 @@ import '../../registration_screen.dart';
 // final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin(); // Removed
 
 class PerformerListScreen extends StatefulWidget {
-  PerformerListScreen({Key? key}) : super(key: key);
+  const PerformerListScreen({super.key});
 
   @override
   _PerformerListScreenState createState() => _PerformerListScreenState();
@@ -77,7 +77,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
           return AlertDialog(
              backgroundColor: Colors.white.withOpacity(0.95), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
              title: Text('Search by State', style: TextStyle(color: primaryColor)),
-             content: Container(width: double.maxFinite, height: MediaQuery.of(context).size.height * 0.6,
+             content: SizedBox(width: double.maxFinite, height: MediaQuery.of(context).size.height * 0.6,
                 child: ListView.builder(shrinkWrap: true, itemCount: usStates.length, itemBuilder: (context, index) { final state = usStates[index]; return ListTile(title: Text(state, style: TextStyle(fontWeight: FontWeight.w500)), onTap: () => Navigator.of(context).pop(state)); }),
              ),
              actions: <Widget>[ TextButton(child: Text('Cancel', style: TextStyle(color: appBarColor)), onPressed: () => Navigator.of(context).pop())],
@@ -100,8 +100,9 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   // --- Helper to Show Notification using Awesome Notifications ---
   Future<void> _showPositionNotification(String listId, String listName, int positionIndex) async {
      String body = "";
-     if (positionIndex == 0) body = "You're up next!";
-     else if (positionIndex == 1) body = "1 performer ahead of you.";
+     if (positionIndex == 0) {
+       body = "You're up next!";
+     } else if (positionIndex == 1) body = "1 performer ahead of you.";
      else body = "$positionIndex performers ahead of you.";
 
      try {
@@ -128,7 +129,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
      if (!mounted || currentUserId == null) return;
      final today = DateTime.now();
      final Map<String, int?> currentPositions = {};
-     docs.forEach((doc) {
+     for (var doc in docs) {
         final listData = doc.data() as Map<String, dynamic>? ?? {};
         final String listId = doc.id;
         final Timestamp? showTimestamp = listData['date'] as Timestamp?;
@@ -140,10 +141,16 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
               final numWaitlist = (listData['numberOfWaitlistSpots'] ?? 0) as int;
               final numBucket = (listData['numberOfBucketSpots'] ?? 0) as int;
               final List<String> activePerformers = [];
-              final checkSpot = (String key) { if (spotsMap.containsKey(key)) { final d = spotsMap[key]; if (d is Map && d['userId'] != null && !(d['isOver'] == true)) activePerformers.add(d['userId']); }};
-              for (int i = 1; i <= numRegular; i++) checkSpot(i.toString());
-              for (int i = 1; i <= numWaitlist; i++) checkSpot("W$i");
-              for (int i = 1; i <= numBucket; i++) checkSpot("B$i");
+              checkSpot(String key) { if (spotsMap.containsKey(key)) { final d = spotsMap[key]; if (d is Map && d['userId'] != null && !(d['isOver'] == true)) activePerformers.add(d['userId']); }}
+              for (int i = 1; i <= numRegular; i++) {
+                checkSpot(i.toString());
+              }
+              for (int i = 1; i <= numWaitlist; i++) {
+                checkSpot("W$i");
+              }
+              for (int i = 1; i <= numBucket; i++) {
+                checkSpot("B$i");
+              }
               final currentPositionIndex = activePerformers.indexOf(currentUserId!);
               currentPositions[listId] = currentPositionIndex;
               if (currentPositionIndex != -1) {
@@ -156,7 +163,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
               }
            }
         }
-     });
+     }
      final Map<String, int?> nextNotifierValue = {};
      _lastNotifiedPositionNotifier.value.forEach((listId, position) { if (currentPositions.containsKey(listId) && currentPositions[listId] != null) nextNotifierValue[listId] = currentPositions[listId]; });
      currentPositions.forEach((listId, position) { if (position != null && !nextNotifierValue.containsKey(listId)) nextNotifierValue[listId] = position; });
@@ -285,7 +292,20 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
          title: Text(_selectedSearchState == null ? 'My Signups' : 'Open Lists: $_selectedSearchState'),
          actions: [
             Tooltip(message: _selectedSearchState == null ? 'Search by State' : 'Clear Search ($_selectedSearchState)', child: IconButton(icon: Icon(Icons.search), onPressed: _toggleSearch)),
-            Tooltip(message: 'Switch Role', child: IconButton(icon: Icon(Icons.switch_account), onPressed: () => _switchRole(context))),
+            Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: ElevatedButton.icon(
+                onPressed: () => _switchRole(context),
+                icon: Icon(Icons.sync_alt, size: 24.0, color: Colors.white),
+                label: Text('Switch Role', style: TextStyle(fontSize: 16.0, color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade600,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+            ),
          ],
       ),
       body: Container(
