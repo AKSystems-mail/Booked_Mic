@@ -6,11 +6,9 @@ import 'package:animate_do/animate_do.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
-import 'dart:ui';
-import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_image_gallery_saver/flutter_image_gallery_saver.dart'; // Import the new package
-import 'package:flutter/widgets.dart'; // Ensure widgets is imported
+// Ensure widgets is imported
 
 // Import necessary screens
 import 'list_setup_screen.dart'; // Keep this for FAB navigation
