@@ -1,15 +1,35 @@
-// lib/host_screens/show_list_screen.dart
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/services.dart';
-import 'package:torch_light/torch_light.dart'; // Using torch_light
+import 'package:torch_light/torch_light.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Define SpotType enum if not already globally available
 enum SpotType { regular, waitlist, bucket }
+
+// Add this class definition somewhere accessible, e.g., above _ShowListScreenState
+class _SpotListItem {
+  final String key; // e.g., "1", "W2", "B1"
+  final SpotType type;
+  final Map<String, dynamic>? data; // Performer data map or null/RESERVED
+  final int originalIndex; // To help with stable sorting
+
+  _SpotListItem({
+    required this.key,
+    required this.type,
+    required this.data,
+    required this.originalIndex,
+  });
+
+  // Helper to determine if it's a performer spot that can be interacted with
+  bool get isPerformer => data != null && data is Map<String, dynamic>;
+  bool get isReserved => data == 'RESERVED';
+  bool get isAvailable => data == null;
+  bool get isOver => isPerformer && (data!['isOver'] ?? false);
+  String get performerName => isPerformer ? (data!['name'] ?? 'Unknown') : '';
+}
 
 class ShowListScreen extends StatefulWidget {
   final String listId;
@@ -21,7 +41,6 @@ class ShowListScreen extends StatefulWidget {
 
 class _ShowListScreenState extends State<ShowListScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  // No TorchController instance needed for torch_light
 
   // --- Timer State ---
   Timer? _timer;
@@ -39,7 +58,6 @@ class _ShowListScreenState extends State<ShowListScreen> {
     super.initState();
     _remainingSecondsNotifier = ValueNotifier(_totalSeconds);
     _loadSettings();
-    // Cannot easily check initial torch state with torch_light, assume off
   }
 
   @override
@@ -56,16 +74,13 @@ class _ShowListScreenState extends State<ShowListScreen> {
       final prefs = await SharedPreferences.getInstance();
       if (!mounted) return;
       setState(() {
-        _autoLightEnabled =
-            prefs.getBool('autoLightEnabled_${widget.listId}') ?? false;
+        _autoLightEnabled = prefs.getBool('autoLightEnabled_${widget.listId}') ?? false;
         _totalSeconds = prefs.getInt('timerTotal_${widget.listId}') ?? 300;
-        _lightThresholdSeconds =
-            prefs.getInt('timerThreshold_${widget.listId}') ?? 30;
+        _lightThresholdSeconds = prefs.getInt('timerThreshold_${widget.listId}') ?? 30;
         _remainingSecondsNotifier.value = _totalSeconds; // Update notifier
       });
     } catch (e) {
       print("Error loading settings: $e");
-      // Handle error, maybe show default settings
     }
   }
 
@@ -74,9 +89,7 @@ class _ShowListScreenState extends State<ShowListScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('timerTotal_${widget.listId}', _totalSeconds);
-      await prefs.setInt(
-          'timerThreshold_${widget.listId}', _lightThresholdSeconds);
-      // await prefs.setBool('autoLightEnabled_${widget.listId}', _autoLightEnabled); // Save auto-light if UI exists
+      await prefs.setInt('timerThreshold_${widget.listId}', _lightThresholdSeconds);
     } catch (e) {
       print("Error saving settings: $e");
     }
@@ -90,7 +103,6 @@ class _ShowListScreenState extends State<ShowListScreen> {
     });
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
-        // Check if widget is still mounted before proceeding
         timer.cancel();
         return;
       }
@@ -112,7 +124,6 @@ class _ShowListScreenState extends State<ShowListScreen> {
   void _pauseTimer() {
     _timer?.cancel();
     if (_isTimerRunning && mounted) {
-      // Check mounted before setState
       setState(() {
         _isTimerRunning = false;
       });
@@ -217,7 +228,6 @@ class _ShowListScreenState extends State<ShowListScreen> {
     final seconds = twoDigits(duration.inSeconds.remainder(60));
     return "$minutes:$seconds";
   }
-  // --- End Timer Logic ---
 
   // --- Light Logic using torch_light ---
   void _handleThresholdReached() {
@@ -260,7 +270,7 @@ class _ShowListScreenState extends State<ShowListScreen> {
       print("Host chose 'Yes' to light prompt.");
       if (!_isFlashlightOn) {
         _turnFlashlightOn();
-      } else {
+            } else {
         print("Flashlight already ON when prompt confirmed.");
       }
     } else {
@@ -288,7 +298,6 @@ class _ShowListScreenState extends State<ShowListScreen> {
       final bool isTorchAvailable = await TorchLight.isTorchAvailable();
       if (!isTorchAvailable) return;
       await TorchLight.disableTorch();
-      // Check mounted before setState, especially in dispose
       if (mounted) setState(() => _isFlashlightOn = false);
       print("Flashlight turned OFF.");
     } on Exception catch (e) {
@@ -312,11 +321,9 @@ class _ShowListScreenState extends State<ShowListScreen> {
           backgroundColor: Colors.red));
     }
   }
-  // --- End Light Logic ---
 
   // --- "Set Over?" Logic ---
-  Future<void> _showSetOverDialog(
-      String spotKey, String performerName, bool currentStatus) async {
+  Future<void> _showSetOverDialog(String spotKey, String performerName, bool currentStatus) async {
     if (currentStatus) return;
     final bool? confirm = await showDialog<bool>(
         context: context,
@@ -356,7 +363,6 @@ class _ShowListScreenState extends State<ShowListScreen> {
       }
     }
   }
-  // --- End "Set Over?" Logic ---
 
   // --- Add Performer Name Dialog ---
   Future<void> _showAddNameDialog(String spotKey) async {
@@ -407,7 +413,6 @@ class _ShowListScreenState extends State<ShowListScreen> {
       }
     }
   }
-  // --- End Add Performer Name Dialog ---
 
   // --- Handle Swipe to Dismiss ---
   Future<void> _handleDismissPerformer(String spotKey, String performerName) async {
@@ -429,7 +434,6 @@ class _ShowListScreenState extends State<ShowListScreen> {
       }
     }
   }
-  // --- End Handle Swipe to Dismiss ---
 
   @override
   Widget build(BuildContext context) {
@@ -439,8 +443,8 @@ class _ShowListScreenState extends State<ShowListScreen> {
     return Theme(
       data: ThemeData.dark().copyWith(
         listTileTheme: ListTileThemeData(
-          textColor: Colors.white, // Explicitly set the text color for ListTile
-          iconColor: Colors.white70, // Optional: set icon color as well
+          textColor: Colors.white,
+          iconColor: Colors.white70,
         ),
       ),
       child: Scaffold(
@@ -533,7 +537,7 @@ class _ShowListScreenState extends State<ShowListScreen> {
             final totalSpots = (listData['numberOfSpots'] ?? 0) as int;
             final totalWaitlist =
                 (listData['numberOfWaitlistSpots'] ?? 0) as int;
-            final totalBucket = (listData['numberOfBucketSpots'] ?? 0) as int;
+                        final totalBucket = (listData['numberOfBucketSpots'] ?? 0) as int;
 
             return _buildListContent(
                 context, spotsMap, totalSpots, totalWaitlist, totalBucket);

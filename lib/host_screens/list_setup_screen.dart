@@ -150,12 +150,10 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
       final DocumentReference newListRef =
           await FirebaseFirestore.instance.collection('Lists').add(listData);
 
-      final String listId = newListRef.id;
-      final String qrCodeData = 'listId:$listId'; // Simple format for now
+// Simple format for now
 
       // Update the Firestore document with the QR code data
-      await newListRef.update({'qrCodeData': qrCodeData});
-
+      await newListRef.update({'qrCodeData': newListRef.id});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('List created successfully!')));
