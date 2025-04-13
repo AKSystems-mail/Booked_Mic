@@ -2,7 +2,7 @@
     <application
         android:label="Booked Mic"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/bookedmic">
         <activity
             android:name=".MainActivity"
             android:exported="true"
