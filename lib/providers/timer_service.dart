@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:myapp/services/settings_service.dart'; // Import settings service
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TimerService extends ChangeNotifier {
   final String listId; // Need listId to load/save settings
@@ -95,14 +96,16 @@ class TimerService extends ChangeNotifier {
   }
 
   Future<void> setLightThreshold(int newThresholdSeconds) async {
-    if (newThresholdSeconds >= 0 && newThresholdSeconds < _totalSeconds) {
-      _lightThresholdSeconds = newThresholdSeconds;
-       await _settingsService.saveTimerSettings(
-        listId: listId,
-        totalSeconds: _totalSeconds,
-        thresholdSeconds: _lightThresholdSeconds,
-      );
-      notifyListeners(); // Notify UI about threshold change (e.g., tooltip)
+    // --- Add Validation Inside the Service ---
+    if (newThresholdSeconds >= 0 && newThresholdSeconds < totalSeconds) {
+      if (_lightThresholdSeconds != newThresholdSeconds) {
+        _lightThresholdSeconds = newThresholdSeconds;
+        print("TimerService: Threshold updated to $_lightThresholdSeconds");
+        // Save the setting
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('timerThreshold_$listId', _lightThresholdSeconds);
+        notifyListeners(); // Notify if needed (e.g., if UI displays threshold)
+      }
     } else {
       // Handle invalid threshold (e.g., show error message)
       // This logic might be better handled in the UI dialog callback
