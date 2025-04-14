@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// Import providers
+import 'package:provider/provider.dart';
+import 'package:myapp/providers/firestore_provider.dart';
+// Import new provider
+// Import new provider
+import 'package:myapp/services/settings_service.dart'; // Import new service
 // --- Import Awesome Notifications ---
 import 'package:awesome_notifications/awesome_notifications.dart';
 // --- End Import ---
@@ -73,7 +79,39 @@ Future<void> main() async {
 
   // --- End Awesome Notifications Initialization ---
 
-  runApp(MyApp());
+   runApp(
+    MultiProvider(
+      providers: [
+        // Your existing FirestoreProvider
+        ChangeNotifierProvider(create: (_) => FirestoreProvider()),
+
+        // Add SettingsService (using simple Provider if no listening needed directly)
+        Provider(create: (_) => SettingsService.instance), // Provide singleton instance
+
+        // --- Add other providers as needed by specific routes ---
+        // Note: TimerService and FlashlightService need listId, so they
+        // should be provided closer to where ShowListScreen is used,
+        // OR you need a way to manage instances per listId if multiple
+        // lists can be open simultaneously.
+        // Providing them directly here is problematic if they are list-specific.
+        // See ShowListScreen widget above for how they are provided there instead.
+
+        // --- Example if they were app-wide (NOT list-specific) ---
+        // ChangeNotifierProvider(
+        //   create: (context) => TimerService(listId: 'some_default_or_managed_id'),
+        // ),
+        // ChangeNotifierProxyProvider<TimerService, FlashlightService>(
+        //   create: (context) => FlashlightService(
+        //     listId: 'some_default_or_managed_id',
+        //     timerService: Provider.of<TimerService>(context, listen: false),
+        //   ),
+        //   update: (context, timerService, previous) => previous!..updateDependencies(timerService),
+        // ),
+         // ----------------------------------------------------------
+      ],
+      child: MyApp(),
+    ),
+ );
 }
 
 // --- Awesome Notifications Controller (Static methods required) ---

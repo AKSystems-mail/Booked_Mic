@@ -1,54 +1,58 @@
-// models/show.dart
+// lib/models/show.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:myapp/models/spot.dart';
+
+import 'spot.dart';
 
 class Show {
-  final String? id;
-  final String showName;
-  final DateTime date;
-  final String location;
-  final String city;
-  final String state;
-  final int spots;
-  final List<String> reservedSpots;
-  final bool bucketSpots;
-  final int waitListSpots;
-  final List<Spot> waitList;
-  final List<Spot> spotsList;
-  final List<String> bucketNames;
-  final DateTime? cutoffDate;
-  final TimeOfDay? cutoffTime;
+  String showId;
+  String showName;
+  DateTime date;
+  String location;
+  String city;
+  String state;
+  int numberOfSpots; // Non-nullable
+  List<String> reservedSpots;
+  bool bucketSpots;
+  int numberOfBucketSpots; // Non-nullable
+  int waitListSpots; // Non-nullable
+  List<Spot> waitList;
+  List<Spot> spotsList;
+  List<String> bucketNames;
+  DateTime? cutoffDate;
+  TimeOfDay? cutoffTime;
 
   Show({
-    this.id,
+    required this.showId,
     required this.showName,
     required this.date,
     required this.location,
     required this.city,
     required this.state,
-    required this.spots,
-    required this.reservedSpots,
-    required this.bucketSpots,
-    required this.waitListSpots,
-    required this.waitList,
-    required this.spotsList,
-    required this.bucketNames,
+    required this.numberOfSpots,
+    this.reservedSpots = const [],
+    this.bucketSpots = false,
+    this.numberOfBucketSpots = 0,
+    this.waitListSpots = 0,
+    this.waitList = const [],
+    this.spotsList = const [],
+    this.bucketNames = const [],
     this.cutoffDate,
     this.cutoffTime,
   });
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toFirestore() {
     return {
-      'id': id,
+      'showId': showId,
       'showName': showName,
       'date': Timestamp.fromDate(date),
       'location': location,
       'city': city,
       'state': state,
-      'spots': spots,
+      'numberOfSpots': numberOfSpots,
       'reservedSpots': reservedSpots,
       'bucketSpots': bucketSpots,
+      'numberOfBucketSpots': numberOfBucketSpots,
       'waitListSpots': waitListSpots,
       'waitList': waitList.map((item) => item.toJson()).toList(),
       'spotsList': spotsList.map((item) => item.toJson()).toList(),
@@ -56,9 +60,9 @@ class Show {
       'cutoffDate': cutoffDate != null ? Timestamp.fromDate(cutoffDate!) : null,
       'cutoffTime': cutoffTime != null
           ? Timestamp.fromDate(DateTime(
-              date.year,
-              date.month,
-              date.day,
+              DateTime.now().year,
+              DateTime.now().month,
+              DateTime.now().day,
               cutoffTime!.hour,
               cutoffTime!.minute,
             ))
@@ -66,24 +70,24 @@ class Show {
     };
   }
 
-  factory Show.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-
+  factory Show.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
     // Debug prints to check data
     print('Document ID: ${doc.id}');
     print('Data: $data');
 
     return Show(
-      id: doc.id,
+      showId: doc.id,
       showName: data['showName'] as String,
       date: (data['date'] as Timestamp).toDate(),
       location: data['location'] as String,
       city: data['city'] ?? '', // Handle null value for city
       state: data['state'] ?? '', // Handle null value for state
-      spots: data['spots'] as int,
+      numberOfSpots: data['numberOfSpots'] as int? ?? 0, // Provide a default value if null
       reservedSpots: List<String>.from(data['reservedSpots'] ?? []), // Handle null value for reservedSpots
       bucketSpots: data['bucketSpots'] as bool,
-      waitListSpots: data['waitListSpots'] as int,
+      numberOfBucketSpots: data['numberOfBucketSpots'] as int? ?? 0, // Provide a default value if null
+      waitListSpots: data['waitListSpots'] as int? ?? 0, // Provide a default value if null
       waitList: (data['waitList'] as List<dynamic>? ?? []).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(), // Handle null value for waitList
       spotsList: (data['spotsList'] as List<dynamic>? ?? []).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(), // Handle null value for spotsList
       bucketNames: List<String>.from(data['bucketNames'] ?? []), // Handle null value for bucketNames

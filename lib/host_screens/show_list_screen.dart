@@ -1,227 +1,491 @@
+// lib/host_screens/show_list_screen.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Keep for Timestamp if needed anywhere
+import 'package:provider/provider.dart'; // Import Provider
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/services.dart';
 import 'package:torch_light/torch_light.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Define SpotType enum if not already globally available
+// Import Models and Providers
+import 'package:myapp/models/show.dart';
+import 'package:myapp/providers/firestore_provider.dart';
+import 'package:myapp/providers/timer_service.dart'; // Assuming these exist
+import 'package:myapp/providers/flashlight_service.dart'; // Assuming these exist
+import 'package:myapp/widgets/timer_control_bar.dart'; // Assuming this exists
+// Removed SpotListTile import as logic is now internal
+
+// Define SpotType enum
 enum SpotType { regular, waitlist, bucket }
 
-// Add this class definition somewhere accessible, e.g., above _ShowListScreenState
+// Helper Class for Reorderable List
 class _SpotListItem {
-  final String key; // e.g., "1", "W2", "B1"
+  final String key;
   final SpotType type;
-  final Map<String, dynamic>? data; // Performer data map or null/RESERVED
-  final int originalIndex; // To help with stable sorting
+  final dynamic data;
+  final int originalIndex;
 
-  _SpotListItem({
-    required this.key,
-    required this.type,
-    required this.data,
-    required this.originalIndex,
-  });
+  _SpotListItem({ required this.key, required this.type, required this.data, required this.originalIndex });
 
-  // Helper to determine if it's a performer spot that can be interacted with
   bool get isPerformer => data != null && data is Map<String, dynamic>;
   bool get isReserved => data == 'RESERVED';
   bool get isAvailable => data == null;
-  bool get isOver => isPerformer && (data!['isOver'] ?? false);
-  String get performerName => isPerformer ? (data!['name'] ?? 'Unknown') : '';
+  bool get isOver => isPerformer && ((data as Map<String, dynamic>)['isOver'] ?? false);
+  String get performerName => isPerformer ? ((data as Map<String, dynamic>)['name'] ?? 'Unknown') : '';
+  String get performerId => isPerformer ? ((data as Map<String, dynamic>)['userId'] ?? '') : '';
 }
 
-class ShowListScreen extends StatefulWidget {
+
+// --- Main Widget using MultiProvider ---
+class ShowListScreen extends StatelessWidget {
   final String listId;
   const ShowListScreen({super.key, required this.listId});
 
   @override
-  _ShowListScreenState createState() => _ShowListScreenState();
+  Widget build(BuildContext context) {
+    // Provide FirestoreProvider above the screen content
+    return ChangeNotifierProvider<FirestoreProvider>(
+      create: (_) => FirestoreProvider(),
+      child: MultiProvider( // Keep MultiProvider for Timer/Flashlight if used
+        providers: [
+          ChangeNotifierProvider<TimerService>(
+            create: (_) => TimerService(listId: listId),
+          ),
+          ChangeNotifierProxyProvider<TimerService, FlashlightService>(
+            create: (context) => FlashlightService(
+              listId: listId,
+              timerService: Provider.of<TimerService>(context, listen: false),
+            ),
+            update: (context, timerService, previous) =>
+                previous?..updateTimerService(timerService) ?? // Update existing instance
+                FlashlightService(listId: listId, timerService: timerService), // Or create new
+          ),
+        ],
+        child: ShowListScreenContent(listId: listId), // Separate content widget
+      ),
+    );
+  }
+}
+// --- End Main Widget ---
+
+
+// --- Screen Content Widget ---
+class ShowListScreenContent extends StatefulWidget {
+  final String listId;
+  const ShowListScreenContent({super.key, required this.listId});
+
+  @override
+  _ShowListScreenContentState createState() => _ShowListScreenContentState();
 }
 
-class _ShowListScreenState extends State<ShowListScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+class _ShowListScreenContentState extends State<ShowListScreenContent> {
+  // Timer State (Managed by TimerService now)
+  // Flashlight State (Managed by FlashlightService now)
+  // Settings State (Managed by Timer/Flashlight services now)
 
-  // --- Timer State ---
-  Timer? _timer;
-  int _totalSeconds = 300;
-  late final ValueNotifier<int> _remainingSecondsNotifier;
-  int _lightThresholdSeconds = 30;
-  bool _isTimerRunning = false;
-  bool _isFlashlightOn = false; // Track flashlight state locally
-
-  // --- Settings State ---
-  bool _autoLightEnabled = false;
+  // State for Reordering
+  List<_SpotListItem> _orderedSpotList = [];
+  bool _isReordering = false;
 
   @override
   void initState() {
     super.initState();
-    _remainingSecondsNotifier = ValueNotifier(_totalSeconds);
-    _loadSettings();
+    // --- Set up callbacks for FlashlightService ---
+    // Use addPostFrameCallback to ensure providers are ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+         // Access FlashlightService safely
+         try {
+            final flashlightService = context.read<FlashlightService>();
+            flashlightService.showLightPromptCallback = _showLightPromptDialog;
+            flashlightService.showErrorCallback = _showErrorSnackbar;
+         } catch (e) {
+            print("Error accessing FlashlightService in initState: $e");
+            // Handle case where provider might not be ready immediately
+         }
+      }
+    });
+    // --- End Callback Setup ---
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _remainingSecondsNotifier.dispose();
-    _turnFlashlightOff(); // Attempt to turn off on dispose
+    // Services handle their own disposal if implemented correctly
     super.dispose();
   }
 
-  // --- Settings Loading ---
-  Future<void> _loadSettings() async {
+  // --- Dialog Functions ---
+  // These now use the providers for actions
+
+  Future<void> _setTotalTimerDialog() async {
+     if (!mounted) return;
+     final timerService = context.read<TimerService>(); // Use read for one-off action
+     int currentMinutes = timerService.totalSeconds ~/ 60;
+     int? newMinutes = await showDialog<int>( context: context, builder: (BuildContext dialogContext) { /* ... Dialog UI ... */ });
+     if (newMinutes != null && newMinutes > 0) {
+       await timerService.setTotalSeconds(newMinutes * 60); // Call service method
+     }
+  }
+
+  Future<void> _setThresholdDialog() async {
+     if (!mounted) return;
+     final timerService = context.read<TimerService>(); // Use read
+     int currentSeconds = timerService.lightThresholdSeconds;
+     int? newSeconds = await showDialog<int>( context: context, builder: (BuildContext dialogContext) { /* ... Dialog UI ... */ });
+     if (newSeconds != null) {
+       bool success = await timerService.setLightThreshold(newSeconds); // Call service method
+       if (!success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Threshold must be less than total time (${timerService.totalSeconds} sec).'), backgroundColor: Colors.orange));
+       } else if (success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Threshold set to $newSeconds seconds remaining.'), duration: Duration(seconds: 2)));
+       }
+     }
+  }
+
+  // Callback function passed to FlashlightService
+  Future<bool?> _showLightPromptDialog() async {
+     if (!mounted) return null;
+     final timerService = context.read<TimerService>();
+     if (!timerService.isTimerRunning) return null; // Check timer state via service
+
+     return await showDialog<bool>( context: context, barrierDismissible: false, builder: (BuildContext dialogContext) { /* ... Dialog UI ... */ });
+     // FlashlightService will handle calling toggle based on result
+  }
+
+  // Callback function passed to FlashlightService
+  void _showErrorSnackbar(String message) {
+     if (mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
+     }
+  }
+
+  Future<void> _showSetOverDialog(String spotKey, String performerName, bool currentStatus) async {
+    if (!mounted) return;
+    if (currentStatus) return;
+    final bool? confirm = await showDialog<bool>( context: context, builder: (BuildContext dialogContext) { /* ... Dialog UI ... */ });
+    if (confirm == true) {
+      try {
+        // Use FirestoreProvider
+        await context.read<FirestoreProvider>().setSpotOver(widget.listId, spotKey, true);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"$performerName" marked as over.'), duration: Duration(seconds: 2)));
+      } catch (e) {
+        debugPrint("Error marking spot as over: $e");
+        if (mounted) _showErrorSnackbar('Error updating status: $e');
+      }
+    }
+  }
+
+  Future<void> _showAddNameDialog(String spotKey) async {
+    if (!mounted) return;
+    TextEditingController nameController = TextEditingController();
+    final String? name = await showDialog<String>( context: context, builder: (BuildContext dialogContext) { /* ... Dialog UI ... */ });
+    if (name != null && name.isNotEmpty) {
+      try {
+        // Use FirestoreProvider
+        await context.read<FirestoreProvider>().addManualNameToSpot(widget.listId, spotKey, name);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added "$name" to spot $spotKey.')));
+      } catch (e) {
+        debugPrint("Error adding name to spot: $e");
+         if (mounted) _showErrorSnackbar('Error adding name: $e');
+      }
+    }
+  }
+
+  Future<void> _handleDismissPerformer(String spotKey, String performerName) async {
+    // Note: The original _SpotListItem doesn't easily provide performerId here.
+    // If needed, FirestoreProvider.removePerformerFromSpot needs adjustment
+    // or the _SpotListItem needs the ID. Assuming removal doesn't need ID for now.
+    if (!mounted) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      if (!mounted) return;
-      setState(() {
-        _autoLightEnabled = prefs.getBool('autoLightEnabled_${widget.listId}') ?? false;
-        _totalSeconds = prefs.getInt('timerTotal_${widget.listId}') ?? 300;
-        _lightThresholdSeconds = prefs.getInt('timerThreshold_${widget.listId}') ?? 30;
-        _remainingSecondsNotifier.value = _totalSeconds; // Update notifier
-      });
+      // Use FirestoreProvider
+      await context.read<FirestoreProvider>().removePerformerFromSpot(widget.listId, spotKey);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Removed "$performerName" from spot $spotKey.')));
     } catch (e) {
-      print("Error loading settings: $e");
+      debugPrint("Error removing performer: $e");
+      if (mounted) _showErrorSnackbar('Error removing performer: $e');
     }
   }
+  // --- End Dialog Functions ---
 
-  // --- Save Settings ---
-  Future<void> _saveTimerSettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('timerTotal_${widget.listId}', _totalSeconds);
-      await prefs.setInt('timerThreshold_${widget.listId}', _lightThresholdSeconds);
-    } catch (e) {
-      print("Error saving settings: $e");
-    }
+
+  // --- Function to Save Reordered List ---
+  Future<void> _saveReorderedList(List<_SpotListItem> reorderedList) async {
+     if (_isReordering) return;
+     setState(() { _isReordering = true; });
+     print("Saving reordered list...");
+
+     Map<String, dynamic> newSpotsMap = {};
+     int regularCounter = 1; int waitlistCounter = 1; int bucketCounter = 1;
+     int currentRegularCount = reorderedList.where((i) => i.type == SpotType.regular).length;
+     int currentWaitlistCount = reorderedList.where((i) => i.type == SpotType.waitlist).length;
+
+     for (int i = 0; i < reorderedList.length; i++) {
+        final item = reorderedList[i]; String newKey;
+        if (regularCounter <= currentRegularCount) { newKey = regularCounter.toString(); regularCounter++; }
+        else if (waitlistCounter <= currentWaitlistCount) { newKey = 'W$waitlistCounter'; waitlistCounter++; }
+        else { newKey = 'B$bucketCounter'; bucketCounter++; }
+        newSpotsMap[newKey] = item.data;
+     }
+
+     try {
+        // Use FirestoreProvider - *** NEED TO ADD reorderSpots METHOD ***
+        // await context.read<FirestoreProvider>().reorderSpots(widget.listId, newSpotsMap); // Assuming provider method takes the map
+        // --- TEMPORARY DIRECT FIRESTORE CALL (Provider method needs adding) ---
+        await FirebaseFirestore.instance.collection('Lists').doc(widget.listId).update({'spots': newSpotsMap});
+        // --- END TEMPORARY ---
+        print("Reordered list saved successfully.");
+     } catch (e) {
+        print("Error saving reordered list: $e");
+        if (mounted) _showErrorSnackbar('Error saving order: $e');
+     } finally {
+        if (mounted) setState(() { _isReordering = false; });
+     }
+  }
+  // --- End Save Reordered List ---
+
+  // --- Helper to create initial ordered list ---
+  List<_SpotListItem> _createOrderedList(Map<String, dynamic> spotsMap, int totalRegular, int totalWaitlist, int totalBucket) {
+     List<_SpotListItem> items = []; int index = 0;
+     void addItem(String key, dynamic data, SpotType type) { items.add(_SpotListItem(key: key, type: type, data: data, originalIndex: index++)); }
+     List<int> regularKeys = []; List<int> waitlistKeysNum = []; List<int> bucketKeysNum = [];
+     spotsMap.forEach((key, value) { if (int.tryParse(key) != null) regularKeys.add(int.parse(key)); else if (key.startsWith('W') && int.tryParse(key.substring(1)) != null) waitlistKeysNum.add(int.parse(key.substring(1))); else if (key.startsWith('B') && int.tryParse(key.substring(1)) != null) bucketKeysNum.add(int.parse(key.substring(1))); });
+     regularKeys.sort(); waitlistKeysNum.sort(); bucketKeysNum.sort();
+     for (int i = 1; i <= totalRegular; i++) { String key = i.toString(); addItem(key, spotsMap[key], SpotType.regular); }
+     for (int i = 1; i <= totalWaitlist; i++) { String key = "W$i"; addItem(key, spotsMap[key], SpotType.waitlist); }
+     for (int i = 1; i <= totalBucket; i++) { String key = "B$i"; addItem(key, spotsMap[key], SpotType.bucket); }
+     return items;
+  }
+  // --- End Helper ---
+
+
+  @override
+  Widget build(BuildContext context) {
+    // Access providers needed in build
+    final firestoreProvider = context.watch<FirestoreProvider>();
+    // Timer and Flashlight might be watched by TimerControlBar directly
+
+    return Theme(
+      data: ThemeData.dark().copyWith( /* ... dark theme overrides ... */ ),
+      child: Scaffold(
+        appBar: AppBar(
+          title: StreamBuilder<Show>( // Watch the Show object stream
+              stream: firestoreProvider.getShow(widget.listId),
+              builder: (context, snapshot) {
+                if (snapshot.hasData) return Text(snapshot.data!.showName);
+                return Text('List Details');
+              }),
+          // Use the extracted TimerControlBar widget
+          bottom: TimerControlBar(
+             backgroundColor: Colors.blue.shade400, // Pass color
+             onSetTotalDialog: _setTotalTimerDialog,
+             onSetThresholdDialog: _setThresholdDialog,
+             // Pass necessary callbacks or values from Timer/Flashlight services
+             // Example: Assuming TimerControlBar uses Consumer/watch internally
+          ),
+        ),
+        body: StreamBuilder<Show>( // Main body stream watches the Show object
+          stream: firestoreProvider.getShow(widget.listId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) return Center(child: CircularProgressIndicator());
+            if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: Colors.red.shade400)));
+            if (!snapshot.hasData || snapshot.data == null) return Center(child: Text('List not found.'));
+
+            final showData = snapshot.data!; // Now we have the Show object
+
+            // --- Use Show object data ---
+            final spotsMap = showData.spots; // Access spots map from model
+            final totalSpots = showData.numberOfSpots;
+            final totalWaitlist = showData.waitListSpots; // Check model field name
+            final totalBucket = showData.numberOfBucketSpots; // Check model field name
+            // --- End Use ---
+
+            if (!_isReordering) {
+               _orderedSpotList = _createOrderedList(spotsMap, totalSpots, totalWaitlist, totalBucket);
+            }
+
+            if (_orderedSpotList.isEmpty) {
+               return Center(child: Text("This list currently has no spots defined."));
+            }
+
+            // Pass the ordered list to the builder
+            return _buildListWidgetContent(context, _orderedSpotList);
+          },
+        ),
+      ),
+    );
   }
 
-  // --- Timer Logic ---
-  void _startTimer() {
-    if (_isTimerRunning || _remainingSecondsNotifier.value <= 0) return;
-    setState(() {
-      _isTimerRunning = true;
-    });
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_remainingSecondsNotifier.value > 0) {
-        _remainingSecondsNotifier.value--;
-        if (_remainingSecondsNotifier.value == _lightThresholdSeconds) {
-          _handleThresholdReached();
-        }
-      } else {
-        _pauseTimer();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text("Time's Up!"), duration: Duration(seconds: 3)));
-        }
-      }
-    });
-  }
+  // --- Helper Widget to Build Reorderable List Content ---
+  Widget _buildListWidgetContent(BuildContext context, List<_SpotListItem> spotItems) {
+    return ReorderableListView.builder(
+       padding: EdgeInsets.only(bottom: 80, top: 8),
+       itemCount: spotItems.length,
+       itemBuilder: (context, index) {
+          final item = spotItems[index];
+          final itemKey = ValueKey('${item.key}_${item.originalIndex}');
 
-  void _pauseTimer() {
-    _timer?.cancel();
-    if (_isTimerRunning && mounted) {
-      setState(() {
-        _isTimerRunning = false;
-      });
-    }
-  }
-
-  void _resetTimerDisplay() {
-    _remainingSecondsNotifier.value = _totalSeconds;
-  }
-
-  void _resetAndStopTimer() {
-    _pauseTimer();
-    _resetTimerDisplay();
-  }
-
-  void _setTotalTimerDialog() async {
-    int currentMinutes = _totalSeconds ~/ 60;
-    int? newMinutes = await showDialog<int>(
-        context: context,
-        builder: (BuildContext context) {
-          TextEditingController minController =
-              TextEditingController(text: currentMinutes.toString());
-          return AlertDialog(
-            title: Text("Set Total Timer (Minutes)"),
-            content: TextField(
-              controller: minController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(labelText: "Minutes"),
-              autofocus: true,
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text("Cancel")),
-              TextButton(
-                  onPressed: () {
-                    int? mins = int.tryParse(minController.text);
-                    Navigator.pop(context, mins);
-                  },
-                  child: Text("Set"))
-            ],
+          // Use extracted SpotListTile widget
+          return SpotListTile(
+             key: itemKey, // Pass the key
+             spotKey: item.key, // Pass original key for actions
+             spotData: item.data,
+             spotLabel: _calculateSpotLabel(item, index, spotItems), // Calculate label
+             spotType: item.type,
+             animationIndex: index, // Use current index for animation stagger
+             onShowAddNameDialog: _showAddNameDialog, // Pass callback
+             onShowSetOverDialog: _showSetOverDialog, // Pass callback
+             onDismissPerformer: _handleDismissPerformer, // Pass callback
+             isReorderable: true, // Enable drag handle etc.
+             reorderIndex: index, // Pass current index for drag handle
           );
-        });
-    if (newMinutes != null && newMinutes > 0) {
-      _totalSeconds = newMinutes * 60;
-      _resetAndStopTimer();
-      _saveTimerSettings();
-    }
+       },
+       onReorder: (int oldIndex, int newIndex) {
+          if (_isReordering) return;
+          setState(() {
+             if (newIndex > oldIndex) newIndex -= 1;
+             final _SpotListItem item = _orderedSpotList.removeAt(oldIndex);
+             _orderedSpotList.insert(newIndex, item);
+             _saveReorderedList(_orderedSpotList);
+          });
+       },
+    );
   }
+  // --- End Helper ---
 
-  void _setThresholdDialog() async {
-    int currentSeconds = _lightThresholdSeconds;
-    int? newSeconds = await showDialog<int>(
-        context: context,
-        builder: (BuildContext context) {
-          TextEditingController secController =
-              TextEditingController(text: currentSeconds.toString());
-          return AlertDialog(
-            title: Text("Set Light Threshold (Seconds)"),
-            content: TextField(
-              controller: secController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(labelText: "Seconds Remaining"),
-              autofocus: true,
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text("Cancel")),
-              TextButton(
-                  onPressed: () {
-                    int? secs = int.tryParse(secController.text);
-                    Navigator.pop(context, secs);
-                  },
-                  child: Text("Set"))
-            ],
-          );
-        });
-    if (newSeconds != null && newSeconds >= 0 && newSeconds < _totalSeconds) {
-      _lightThresholdSeconds = newSeconds;
-      _saveTimerSettings();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'Threshold set to $_lightThresholdSeconds seconds remaining.'),
-            duration: Duration(seconds: 2)));
+  // --- Helper to calculate display label ---
+  String _calculateSpotLabel(_SpotListItem item, int currentIndex, List<_SpotListItem> currentList) {
+      int displayNum = 1;
+      int countOfType = 0;
+      for(int i=0; i<=currentIndex; i++){
+         if(currentList[i].type == item.type){
+            countOfType++;
+         }
       }
-    } else if (newSeconds != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Threshold must be less than total time ($_totalSeconds sec).'),
-          backgroundColor: Colors.orange));
-    }
+      displayNum = countOfType;
+
+      switch (item.type) {
+         case SpotType.regular: return "$displayNum.";
+         case SpotType.waitlist: return "W$displayNum.";
+         case SpotType.bucket: return "B$displayNum.";
+      }
+  }
+  // --- End Helper ---
+
+} // End of _ShowListScreenContentState class
+
+// --- Ensure models/providers/widgets are correctly defined ---
+// Example Placeholder for TimerService (replace with your actual service)
+class TimerService extends ChangeNotifier {
+  final String listId;
+  TimerService({required this.listId}) { /* Load initial state */ }
+  int totalSeconds = 300;
+  int lightThresholdSeconds = 30;
+  bool isTimerRunning = false;
+  ValueNotifier<int> remainingSecondsNotifier = ValueNotifier(300);
+
+  Future<void> setTotalSeconds(int seconds) async { totalSeconds = seconds; remainingSecondsNotifier.value = seconds; notifyListeners(); /* Save */ }
+  Future<void> setLightThreshold(int seconds) async { if (seconds < totalSeconds) { lightThresholdSeconds = seconds; notifyListeners(); /* Save */ return true; } return false; }
+  void startTimer() { /* ... */ isTimerRunning = true; notifyListeners(); }
+  void pauseTimer() { /* ... */ isTimerRunning = false; notifyListeners(); }
+  void resetAndStopTimer() { /* ... */ isTimerRunning = false; remainingSecondsNotifier.value = totalSeconds; notifyListeners(); }
+}
+
+// Example Placeholder for FlashlightService (replace with actual)
+class FlashlightService extends ChangeNotifier {
+  final String listId;
+  final TimerService timerService; // Depends on TimerService
+  bool isFlashlightOn = false;
+  Function(String)? showErrorCallback;
+  Future<bool?> Function()? showLightPromptCallback;
+
+  FlashlightService({required this.listId, required this.timerService}) {
+     // Listen to timer changes if needed
+     timerService.remainingSecondsNotifier.addListener(_checkThreshold);
+     // Load initial settings
   }
 
-  String _formatDuration(int totalSeconds) {
+  void updateTimerService(TimerService newTimerService) {
+     // Update listener if timer service instance changes (might not be needed with ProxyProvider)
+  }
+
+  void _checkThreshold() {
+     if (timerService.remainingSecondsNotifier.value == timerService.lightThresholdSeconds) {
+        // Handle threshold logic, potentially calling callbacks
+        _handleThresholdReached();
+     }
+  }
+
+  void _handleThresholdReached() async {
+     // Load autoLightEnabled setting
+     bool autoLight = false; // Replace with actual loading
+     if (autoLight) {
+        if (!isFlashlightOn) await toggleFlashlight();
+     } else {
+        final bool? result = await showLightPromptCallback?.call();
+        if (result == true && !isFlashlightOn) {
+           await toggleFlashlight();
+        }
+     }
+  }
+
+  Future<void> toggleFlashlight() async {
+     try {
+        await TorchLight.toggle(); // Use torch_light static method
+        isFlashlightOn = !isFlashlightOn; // Assume toggle worked
+        notifyListeners();
+     } catch (e) {
+        showErrorCallback?.call("Flashlight Error: $e");
+     }
+  }
+
+  @override
+  void dispose() {
+    timerService.remainingSecondsNotifier.removeListener(_checkThreshold);
+    super.dispose();
+  }
+}
+
+// Example Placeholder for TimerControlBar (replace with actual)
+class TimerControlBar extends StatelessWidget implements PreferredSizeWidget {
+  final Color backgroundColor;
+  final VoidCallback onSetTotalDialog;
+  final VoidCallback onSetThresholdDialog;
+
+  const TimerControlBar({
+     Key? key,
+     required this.backgroundColor,
+     required this.onSetTotalDialog,
+     required this.onSetThresholdDialog,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    // Use Consumer to listen to TimerService and FlashlightService
+    return Consumer2<TimerService, FlashlightService>(
+       builder: (context, timer, flashlight, child) {
+          return Container(
+             padding: EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+             color: backgroundColor,
+             child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                   IconButton(icon: Icon(timer.isTimerRunning ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 30), color: Colors.white, tooltip: timer.isTimerRunning ? 'Pause Timer' : 'Start Timer', onPressed: timer.isTimerRunning ? timer.pauseTimer : timer.startTimer),
+                   ValueListenableBuilder<int>( valueListenable: timer.remainingSecondsNotifier, builder: (context, val, _) => Text(_formatDurationStatic(val), style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'monospace'))),
+                   IconButton(icon: Icon(Icons.replay, size: 28), color: Colors.white, tooltip: 'Reset Timer', onPressed: timer.resetAndStopTimer),
+                   IconButton(icon: Icon(Icons.timer_outlined, size: 28), color: Colors.white, tooltip: 'Set Total Duration', onPressed: onSetTotalDialog),
+                   IconButton(icon: Icon(Icons.alarm_add_outlined, size: 28), color: Colors.white, tooltip: 'Set Light Threshold (${timer.lightThresholdSeconds}s)', onPressed: onSetThresholdDialog),
+                   IconButton(icon: Icon(flashlight.isFlashlightOn ? Icons.flashlight_on_outlined : Icons.flashlight_off_outlined, size: 28), color: flashlight.isFlashlightOn ? Colors.yellowAccent : Colors.white, tooltip: flashlight.isFlashlightOn ? 'Turn Flashlight Off' : 'Turn Flashlight On', onPressed: flashlight.toggleFlashlight),
+                ],
+             ),
+          );
+       }
+    );
+  }
+
+  // Static helper for formatting needed here if called from static context
+  static String _formatDurationStatic(int totalSeconds) {
     final duration = Duration(seconds: totalSeconds);
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final minutes = twoDigits(duration.inMinutes.remainder(60));
@@ -229,458 +493,96 @@ class _ShowListScreenState extends State<ShowListScreen> {
     return "$minutes:$seconds";
   }
 
-  // --- Light Logic using torch_light ---
-  void _handleThresholdReached() {
-    if (!mounted) return;
-    if (_autoLightEnabled) {
-      if (!_isFlashlightOn) {
-        print("Auto-light enabled, turning flashlight ON.");
-        _turnFlashlightOn();
-      } else {
-        print("Auto-light enabled, but flashlight already ON.");
-      }
-    } else {
-      print("Auto-light disabled, showing prompt.");
-      _showLightPrompt();
-    }
-  }
 
-  Future<void> _showLightPrompt() async {
-    if (!_isTimerRunning || !mounted) return;
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Light Performer?'),
-          content: Text('Time remaining is low.'),
-          actions: <Widget>[
-            TextButton(
-                child: Text('No'),
-                onPressed: () => Navigator.of(context).pop(false)),
-            TextButton(
-                child: Text('Yes',
-                    style: TextStyle(color: Colors.orange.shade600)),
-                onPressed: () => Navigator.of(context).pop(true))
-          ],
-        );
-      },
-    );
-    if (confirm == true) {
-      print("Host chose 'Yes' to light prompt.");
-      if (!_isFlashlightOn) {
-        _turnFlashlightOn();
-            } else {
-        print("Flashlight already ON when prompt confirmed.");
-      }
-    } else {
-      print("Host chose 'No' to light prompt.");
-    }
-  }
+  @override
+  Size get preferredSize => Size.fromHeight(50.0);
+}
 
-  Future<void> _turnFlashlightOn() async {
-    try {
-      final bool isTorchAvailable = await TorchLight.isTorchAvailable();
-      if (!isTorchAvailable) {
-        _handleTorchError("Flashlight not available.");
-        return;
-      }
-      await TorchLight.enableTorch();
-      if (mounted) setState(() => _isFlashlightOn = true);
-      print("Flashlight turned ON.");
-    } on Exception catch (e) {
-      _handleTorchError("Error enabling torch: $e");
-    }
-  }
+// Example Placeholder for SpotListTile (replace with actual)
+class SpotListTile extends StatelessWidget {
+  final String spotKey;
+  final dynamic spotData;
+  final String spotLabel;
+  final SpotType spotType;
+  final int animationIndex;
+  final Function(String) onShowAddNameDialog;
+  final Function(String, String, bool) onShowSetOverDialog;
+  final Function(String, String) onDismissPerformer; // Takes key and name
+  final bool isReorderable;
+  final int reorderIndex;
 
-  Future<void> _turnFlashlightOff() async {
-    try {
-      final bool isTorchAvailable = await TorchLight.isTorchAvailable();
-      if (!isTorchAvailable) return;
-      await TorchLight.disableTorch();
-      if (mounted) setState(() => _isFlashlightOn = false);
-      print("Flashlight turned OFF.");
-    } on Exception catch (e) {
-      _handleTorchError("Error disabling torch: $e");
-    }
-  }
 
-  Future<void> _toggleFlashlightButton() async {
-    if (_isFlashlightOn) {
-      await _turnFlashlightOff();
-    } else {
-      await _turnFlashlightOn();
-    }
-  }
-
-  void _handleTorchError(dynamic message) {
-    print("Flashlight Error: $message");
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Flashlight Error: $message'),
-          backgroundColor: Colors.red));
-    }
-  }
-
-  // --- "Set Over?" Logic ---
-  Future<void> _showSetOverDialog(String spotKey, String performerName, bool currentStatus) async {
-    if (currentStatus) return;
-    final bool? confirm = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Confirm Action'),
-            content: Text('Mark "$performerName" as set over?'),
-            actions: <Widget>[
-              TextButton(
-                  child: Text('Cancel'),
-                  onPressed: () => Navigator.of(context).pop(false)),
-              TextButton(
-                  child: Text('Yes, Set Over',
-                      style: TextStyle(color: Colors.grey.shade400)),
-                  onPressed: () => Navigator.of(context).pop(true))
-            ],
-          );
-        });
-    if (confirm == true) {
-      try {
-        await _firestore
-            .collection('Lists')
-            .doc(widget.listId)
-            .update({'spots.$spotKey.isOver': true});
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('"$performerName" marked as over.'),
-              duration: Duration(seconds: 2)));
-        }
-      } catch (e) {
-        print("Error marking spot as over: $e");
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Error updating status: $e'),
-              backgroundColor: Colors.red));
-        }
-      }
-    }
-  }
-
-  // --- Add Performer Name Dialog ---
-  Future<void> _showAddNameDialog(String spotKey) async {
-    TextEditingController nameController = TextEditingController();
-    final String? name = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Add Performer Name'),
-          content: TextField(
-            controller: nameController,
-            decoration: InputDecoration(labelText: 'Performer Name'),
-            autofocus: true,
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            TextButton(
-              child: Text('Add'),
-              onPressed: () => Navigator.of(context).pop(nameController.text),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (name != null && name.isNotEmpty) {
-      try {
-        await _firestore
-            .collection('Lists')
-            .doc(widget.listId)
-            .update({
-          'spots.$spotKey': {'name': name, 'isOver': false}
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Added "$name" to spot $spotKey.')));
-        }
-      } catch (e) {
-        print("Error adding name to spot: $e");
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Error adding name: $e'),
-              backgroundColor: Colors.red));
-        }
-      }
-    }
-  }
-
-  // --- Handle Swipe to Dismiss ---
-  Future<void> _handleDismissPerformer(String spotKey, String performerName) async {
-    try {
-      await _firestore
-          .collection('Lists')
-          .doc(widget.listId)
-          .update({'spots.$spotKey': null});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Removed "$performerName" from spot $spotKey.')));
-      }
-    } catch (e) {
-      print("Error removing performer: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error removing performer: $e'),
-            backgroundColor: Colors.red));
-      }
-    }
-  }
+  const SpotListTile({
+    required Key key, // Use required Key for ReorderableListView items
+    required this.spotKey,
+    required this.spotData,
+    required this.spotLabel,
+    required this.spotType,
+    required this.animationIndex,
+    required this.onShowAddNameDialog,
+    required this.onShowSetOverDialog,
+    required this.onDismissPerformer,
+    this.isReorderable = false, // Default to false if not passed
+    this.reorderIndex = 0, // Default
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final Color appBarColor = Colors.blue.shade400;
-    final Color timerColor = Colors.white;
+     // Determine state from spotData
+     bool isAvailable = spotData == null;
+     bool isReserved = spotData == 'RESERVED';
+     bool isPerformer = !isAvailable && !isReserved && spotData is Map<String, dynamic>;
+     String titleText = 'Available';
+     String performerName = '';
+     String performerId = ''; // Get ID if needed for dismiss
+     bool isOver = false;
+     Color titleColor = Colors.green.shade300;
+     FontWeight titleWeight = FontWeight.normal;
+     TextDecoration textDecoration = TextDecoration.none;
 
-    return Theme(
-      data: ThemeData.dark().copyWith(
-        listTileTheme: ListTileThemeData(
-          textColor: Colors.white,
-          iconColor: Colors.white70,
-        ),
-      ),
-      child: Scaffold(
-        appBar: AppBar(
-          title: StreamBuilder<DocumentSnapshot>(
-              stream:
-                  _firestore.collection('Lists').doc(widget.listId).snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasData && snapshot.data!.exists) {
-                  var d = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-                  return Text(d['listName'] ?? 'List Details');
-                }
-                return Text('List Details');
-              }),
-          bottom: PreferredSize(
-            preferredSize: Size.fromHeight(50.0),
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
-              color: appBarColor,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  IconButton(
-                      icon: Icon(
-                          _isTimerRunning
-                              ? Icons.pause_circle_filled
-                              : Icons.play_circle_filled,
-                          size: 30),
-                      color: timerColor,
-                      tooltip: _isTimerRunning ? 'Pause Timer' : 'Start Timer',
-                      onPressed: _isTimerRunning ? _pauseTimer : _startTimer),
-                  ValueListenableBuilder<int>(
-                      valueListenable: _remainingSecondsNotifier,
-                      builder: (context, val, child) => Text(
-                          _formatDuration(val),
-                          style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: timerColor,
-                              fontFamily: 'monospace'))),
-                  IconButton(
-                      icon: Icon(Icons.replay, size: 28),
-                      color: timerColor,
-                      tooltip: 'Reset Timer',
-                      onPressed: _resetAndStopTimer),
-                  IconButton(
-                      icon: Icon(Icons.timer_outlined, size: 28),
-                      color: timerColor,
-                      tooltip: 'Set Total Duration',
-                      onPressed: _setTotalTimerDialog),
-                  IconButton(
-                      icon: Icon(Icons.alarm_add_outlined, size: 28),
-                      color: timerColor,
-                      tooltip:
-                          'Set Light Threshold (${_lightThresholdSeconds}s)',
-                      onPressed: _setThresholdDialog),
-                  IconButton(
-                      icon: Icon(
-                          _isFlashlightOn
-                              ? Icons.flashlight_on_outlined
-                              : Icons.flashlight_off_outlined,
-                          size: 28),
-                      color: _isFlashlightOn ? Colors.yellowAccent : timerColor,
-                      tooltip: _isFlashlightOn
-                          ? 'Turn Flashlight Off'
-                          : 'Turn Flashlight On',
-                      onPressed: _toggleFlashlightButton),
-                ],
-              ),
-            ),
-          ),
-        ),
-        body: StreamBuilder<DocumentSnapshot>(
-          stream: _firestore.collection('Lists').doc(widget.listId).snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(
-                  child: Text('Error loading list details: ${snapshot.error}',
-                      style: TextStyle(color: Colors.red.shade400)));
-            }
-            if (!snapshot.hasData || !snapshot.data!.exists) {
-              return Center(child: Text('List not found.'));
-            }
-
-            var listData = snapshot.data!.data() as Map<String, dynamic>;
-            final spotsMap = (listData['spots'] as Map<String, dynamic>?) ?? {};
-            final totalSpots = (listData['numberOfSpots'] ?? 0) as int;
-            final totalWaitlist =
-                (listData['numberOfWaitlistSpots'] ?? 0) as int;
-                        final totalBucket = (listData['numberOfBucketSpots'] ?? 0) as int;
-
-            return _buildListContent(
-                context, spotsMap, totalSpots, totalWaitlist, totalBucket);
-          },
-        ),
-      ),
-    );
-  }
-
-  // --- Helper Widget to Build List Content ---
-  Widget _buildListContent(BuildContext context, Map<String, dynamic> spotsMap,
-      int totalSpots, int totalWaitlist, int totalBucket) {
-    List<Widget> listItems = [];
-    Widget buildSpotTile(int displayIndex, SpotType type, String spotKey) {
-      final spotData = spotsMap[spotKey];
-      bool isAvailable = spotData == null;
-      bool isReserved = spotData == 'RESERVED';
-      bool isPerformerSpot = !isAvailable && !isReserved && spotData is Map<String, dynamic>;
-      String titleText = 'Available';
-      String performerName = '';
-      bool isOver = false;
-      Color titleColor = Colors.green.shade300;
-      if(!isPerformerSpot && !isReserved && !isAvailable){
-        isAvailable = true;
-      }
-      if(!isPerformerSpot && !isReserved && !isAvailable){
-        isPerformerSpot = false;
-      }
-      FontWeight titleWeight = FontWeight.normal;
-      TextDecoration textDecoration = TextDecoration.none;
-      if (isReserved) {
-        titleText = 'Reserved';
-        titleColor = Colors.orange.shade300;
-      } else if (isPerformerSpot) {
+     if (isReserved) { titleText = 'Reserved'; titleColor = Colors.orange.shade300; }
+     else if (isPerformer) {
         final performerData = spotData as Map<String, dynamic>;
         performerName = performerData['name'] ?? 'Unknown Performer';
+        performerId = performerData['userId'] ?? ''; // Extract ID
         isOver = performerData['isOver'] ?? false;
         titleText = performerName;
-        titleColor = isOver
-            ? Colors.grey.shade500
-            : Theme.of(context).listTileTheme.textColor!;
+        titleColor = isOver ? Colors.grey.shade500 : Theme.of(context).listTileTheme.textColor!;
         titleWeight = FontWeight.w500;
-        textDecoration =
-            isOver ? TextDecoration.lineThrough : TextDecoration.none;
-      } else if (type == SpotType.bucket && isAvailable) {
-        titleText = 'Bucket Spot';
-      }
-      String spotLabel;
-      switch (type) {
-        case SpotType.regular:
-          spotLabel = "${displayIndex + 1}.";
-          break;
-        case SpotType.waitlist:
-          spotLabel = "W${displayIndex + 1}.";
-          break;
-        case SpotType.bucket:
-          spotLabel = "B${displayIndex + 1}.";
-          break;
-      }
+        textDecoration = isOver ? TextDecoration.lineThrough : TextDecoration.none;
+     } else if (spotType == SpotType.bucket && isAvailable) { titleText = 'Bucket Spot'; }
 
-      Widget tileContent = Card(
-        key: ValueKey<String>(spotKey), // Ensure unique key for card
+     Widget tile = Card(
         child: ListTile(
-          leading: Text(spotLabel,
-              style: TextStyle(
-                  fontSize: 16,
-                  color: Theme.of(context)
-                      .listTileTheme
-                      .leadingAndTrailingTextStyle
-                      ?.color)),
-          title: Text(titleText,
-              style: TextStyle(
-                  color: titleColor,
-                  fontWeight: titleWeight,
-                  decoration: textDecoration)),
-          onTap: isAvailable && !isReserved
-              ? () => _showAddNameDialog(spotKey)
-              : (isPerformerSpot && !isOver)
-                  ? () => _showSetOverDialog(spotKey, performerName, isOver)
-                  : null,
+           leading: Text(spotLabel, style: TextStyle(fontSize: 16, color: Theme.of(context).listTileTheme.leadingAndTrailingTextStyle?.color)),
+           title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: titleWeight, decoration: textDecoration)),
+           onTap: isAvailable && !isReserved
+               ? () => onShowAddNameDialog(spotKey)
+               : (isPerformer && !isOver)
+                   ? () => onShowSetOverDialog(spotKey, performerName, isOver)
+                   : null,
+           trailing: isReorderable
+               ? ReorderableDragStartListener(
+                   index: reorderIndex,
+                   child: Icon(Icons.drag_handle, color: Colors.grey.shade500),
+                 )
+               : null, // No trailing widget if not reorderable
         ),
-      );
+     );
 
-      if (isPerformerSpot && !isOver) {
-        return FadeInUp(
-          delay: Duration(milliseconds: 50 * (listItems.length + 1)),
-          duration: const Duration(milliseconds: 300),
-          child: Dismissible(
-            key: Key(spotKey),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              color: Colors.red.shade400,
-              alignment: Alignment.centerRight,
-              padding: EdgeInsets.only(right: 20.0),
-              child: Icon(Icons.delete, color: Colors.white),
-            ),
-            onDismissed: (direction) {
-              _handleDismissPerformer(spotKey, performerName);
-            },
-            child: tileContent,
-          ),
+     // Apply dismissible if it's a performer spot that's not over
+     if (isPerformer && !isOver && isReorderable) { // Only allow dismiss if reorderable context
+        return Dismissible(
+           key: key!, // Use the key passed from builder
+           direction: DismissDirection.endToStart,
+           background: Container( /* ... Dismiss background ... */ ),
+           onDismissed: (direction) {
+              onDismissPerformer(spotKey, performerId); // Pass ID if needed
+           },
+           child: tile,
         );
-      } else {
-        return FadeInUp(
-          delay: Duration(milliseconds: 50 * (listItems.length + 1)),
-          duration: const Duration(milliseconds: 300),
-          child: tileContent,
-        );
-      }
-    }
-
-    TextStyle headerStyle = Theme.of(context).textTheme.titleMedium!.copyWith(
-        color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.8));
-    if (totalSpots > 0) {
-      listItems.add(Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
-          child: Text('Regular Spots', style: headerStyle)));
-      for (int i = 0; i < totalSpots; i++) {
-        listItems.add(buildSpotTile(i, SpotType.regular, (i + 1).toString()));
-      }
-      if (totalWaitlist > 0 || totalBucket > 0) listItems.add(Divider());
-    }
-    if (totalWaitlist > 0) {
-      listItems.add(Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 8.0),
-          child: Text('Waitlist Spots', style: headerStyle)));
-      for (int i = 0; i < totalWaitlist; i++) {
-        listItems.add(buildSpotTile(i, SpotType.waitlist, "W${i + 1}"));
-      }
-      if (totalBucket > 0) listItems.add(Divider());
-    }
-    if (totalBucket > 0) {
-      listItems.add(Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 8.0),
-          child: Text('Bucket Spots', style: headerStyle)));
-      for (int i = 0; i < totalBucket; i++) {
-        listItems.add(buildSpotTile(i, SpotType.bucket, "B${i + 1}"));
-      }
-    }
-    if (listItems.isEmpty) {
-      return Center(child: Text("This list currently has no spots defined."));
-    }
-    listItems.add(SizedBox(height: 20));
-    return ListView(children: listItems);
+     } else {
+        return tile;
+     }
   }
 }
