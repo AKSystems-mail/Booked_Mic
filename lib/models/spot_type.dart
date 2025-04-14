@@ -1,0 +1,1 @@
+enum SpotType { regular, waitlist, bucket }
