@@ -1,102 +1,129 @@
 // lib/models/show.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
-
-import 'spot.dart';
+import 'package:flutter/material.dart'; // Keep for TimeOfDay if used
 
 class Show {
-  String showId;
-  String showName;
-  DateTime date;
-  String location;
-  String city;
-  String state;
-  int numberOfSpots; // Non-nullable
-  List<String> reservedSpots;
-  bool bucketSpots;
-  int numberOfBucketSpots; // Non-nullable
-  int waitListSpots; // Non-nullable
-  List<Spot> waitList;
-  List<Spot> spotsList;
-  List<String> bucketNames;
-  DateTime? cutoffDate;
-  TimeOfDay? cutoffTime;
+  final String id;
+  final String showName;
+  final DateTime date; // Use DateTime
+  final String address; // Use address
+  final String state; // Keep state
+  final double? latitude; // Optional coordinates
+  final double? longitude; // Optional coordinates
+  final int numberOfSpots; // Renamed from 'spots' for clarity
+  final List<String> reservedSpots; // Keep if needed, or remove if handled in 'spots' map
+  final bool bucketSpots; // Keep flag if needed
+  final int numberOfWaitlistSpots; // Renamed for clarity
+  final int numberOfBucketSpots; // Added for clarity
+  final List<String> waitList; // Keep if needed, or remove if handled in 'spots' map
+  final List<String> bucketNames; // Keep if needed, or remove if handled in 'spots' map
+  final DateTime? cutoffDate; // Optional
+  final TimeOfDay? cutoffTime; // Optional
+  final String userId; // ID of the host who created it
+  final Timestamp? createdAt; // Added for sorting
+  final Map<String, dynamic> spots; // *** Use Map for spots ***
+  final List<String> signedUpUserIds; // Keep for queries
 
   Show({
-    required this.showId,
+    required this.id,
     required this.showName,
     required this.date,
-    required this.location,
-    required this.city,
+    required this.address,
     required this.state,
+    this.latitude,
+    this.longitude,
     required this.numberOfSpots,
-    this.reservedSpots = const [],
-    this.bucketSpots = false,
-    this.numberOfBucketSpots = 0,
-    this.waitListSpots = 0,
-    this.waitList = const [],
-    this.spotsList = const [],
-    this.bucketNames = const [],
+    required this.reservedSpots,
+    required this.bucketSpots,
+    required this.numberOfWaitlistSpots, // Use new name
+    required this.numberOfBucketSpots, // Use new name
+    required this.waitList,
+    required this.bucketNames,
     this.cutoffDate,
     this.cutoffTime,
+    required this.userId,
+    this.createdAt,
+    required this.spots, // Add spots map
+    required this.signedUpUserIds, // Add signedUpUserIds
   });
 
-  Map<String, dynamic> toFirestore() {
-    return {
-      'showId': showId,
-      'showName': showName,
-      'date': Timestamp.fromDate(date),
-      'location': location,
-      'city': city,
-      'state': state,
-      'numberOfSpots': numberOfSpots,
-      'reservedSpots': reservedSpots,
-      'bucketSpots': bucketSpots,
-      'numberOfBucketSpots': numberOfBucketSpots,
-      'waitListSpots': waitListSpots,
-      'waitList': waitList.map((item) => item.toJson()).toList(),
-      'spotsList': spotsList.map((item) => item.toJson()).toList(),
-      'bucketNames': bucketNames,
-      'cutoffDate': cutoffDate != null ? Timestamp.fromDate(cutoffDate!) : null,
-      'cutoffTime': cutoffTime != null
-          ? Timestamp.fromDate(DateTime(
-              DateTime.now().year,
-              DateTime.now().month,
-              DateTime.now().day,
-              cutoffTime!.hour,
-              cutoffTime!.minute,
-            ))
-          : null,
-    };
-  }
+  // Convert Firestore Timestamp and TimeOfDay string/map back
+  factory Show.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>? ?? {};
 
-  factory Show.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data()!;
-    // Debug prints to check data
-    print('Document ID: ${doc.id}');
-    print('Data: $data');
+    // Handle potential null or incorrect date format
+    DateTime parsedDate;
+    if (data['date'] is Timestamp) {
+       parsedDate = (data['date'] as Timestamp).toDate();
+    } else {
+       // Provide a default or handle error if date is crucial and missing/wrong type
+       parsedDate = DateTime.now(); // Example default
+       print("Warning: Missing or invalid 'date' field for show ${doc.id}");
+    }
+
+    // Handle TimeOfDay (assuming stored as string HH:mm or map) - Optional
+    TimeOfDay? parsedTime;
+    if (data['cutoffTime'] is String) {
+       final parts = (data['cutoffTime'] as String).split(':');
+       if (parts.length == 2) {
+          parsedTime = TimeOfDay(hour: int.tryParse(parts[0]) ?? 0, minute: int.tryParse(parts[1]) ?? 0);
+       }
+    } else if (data['cutoffTime'] is Map) {
+        // Handle map format if you stored it that way
+    }
 
     return Show(
-      showId: doc.id,
-      showName: data['showName'] as String,
-      date: (data['date'] as Timestamp).toDate(),
-      location: data['location'] as String,
-      city: data['city'] ?? '', // Handle null value for city
-      state: data['state'] ?? '', // Handle null value for state
-      numberOfSpots: data['numberOfSpots'] as int? ?? 0, // Provide a default value if null
-      reservedSpots: List<String>.from(data['reservedSpots'] ?? []), // Handle null value for reservedSpots
-      bucketSpots: data['bucketSpots'] as bool,
-      numberOfBucketSpots: data['numberOfBucketSpots'] as int? ?? 0, // Provide a default value if null
-      waitListSpots: data['waitListSpots'] as int? ?? 0, // Provide a default value if null
-      waitList: (data['waitList'] as List<dynamic>? ?? []).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(), // Handle null value for waitList
-      spotsList: (data['spotsList'] as List<dynamic>? ?? []).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(), // Handle null value for spotsList
-      bucketNames: List<String>.from(data['bucketNames'] ?? []), // Handle null value for bucketNames
-      cutoffDate: (data['cutoffDate'] as Timestamp?)?.toDate(),
-      cutoffTime: data['cutoffTime'] != null
-          ? TimeOfDay(
-              hour: (data['cutoffTime'] as Timestamp).toDate().hour,
-              minute: (data['cutoffTime'] as Timestamp).toDate().minute)
-          : null,
+      id: doc.id,
+      showName: data['listName'] ?? '', // Match Firestore field 'listName'
+      date: parsedDate,
+      address: data['address'] ?? '', // Match Firestore field
+      state: data['state'] ?? '', // Match Firestore field
+      latitude: (data['latitude'] as num?)?.toDouble(), // Handle potential num type
+      longitude: (data['longitude'] as num?)?.toDouble(),
+      numberOfSpots: data['numberOfSpots'] ?? 0,
+      reservedSpots: List<String>.from(data['reservedSpots'] ?? []), // Keep if used
+      bucketSpots: data['bucketSpots'] ?? false, // Keep if used
+      numberOfWaitlistSpots: data['numberOfWaitlistSpots'] ?? 0, // Match Firestore field
+      numberOfBucketSpots: data['numberOfBucketSpots'] ?? 0, // Match Firestore field
+      waitList: List<String>.from(data['waitList'] ?? []), // Keep if used
+      bucketNames: List<String>.from(data['bucketNames'] ?? []), // Keep if used
+      cutoffDate: (data['cutoffDate'] as Timestamp?)?.toDate(), // Optional
+      cutoffTime: parsedTime, // Optional
+      userId: data['userId'] ?? '', // Match Firestore field
+      createdAt: data['createdAt'] as Timestamp?, // Added
+      spots: Map<String, dynamic>.from(data['spots'] ?? {}), // *** Get spots map ***
+      signedUpUserIds: List<String>.from(data['signedUpUserIds'] ?? []), // Added
     );
+  }
+
+  // Convert Show object to Map for Firestore
+  Map<String, dynamic> toMap() {
+    // Handle TimeOfDay serialization (e.g., store as HH:mm string) - Optional
+    String? timeString;
+    if (cutoffTime != null) {
+       timeString = "${cutoffTime!.hour.toString().padLeft(2,'0')}:${cutoffTime!.minute.toString().padLeft(2,'0')}";
+    }
+
+    return {
+      'listName': showName, // Match Firestore field 'listName'
+      'date': Timestamp.fromDate(date), // Store as Timestamp
+      'address': address,
+      'state': state,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      'numberOfSpots': numberOfSpots,
+      'reservedSpots': reservedSpots, // Keep if used
+      'bucketSpots': bucketSpots, // Keep if used
+      'numberOfWaitlistSpots': numberOfWaitlistSpots, // Match Firestore field
+      'numberOfBucketSpots': numberOfBucketSpots, // Match Firestore field
+      'waitList': waitList, // Keep if used
+      'bucketNames': bucketNames, // Keep if used
+      if (cutoffDate != null) 'cutoffDate': Timestamp.fromDate(cutoffDate!), // Optional
+      if (timeString != null) 'cutoffTime': timeString, // Optional
+      'userId': userId,
+      // createdAt is set by server or on create
+      'spots': spots, // *** Include spots map ***
+      'signedUpUserIds': signedUpUserIds, // Include array
+    };
   }
 }
