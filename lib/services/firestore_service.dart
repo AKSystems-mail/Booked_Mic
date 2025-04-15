@@ -1,7 +1,6 @@
 // lib/services/firestore_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:myapp/models/show.dart';
-// Removed unused models
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -11,13 +10,14 @@ class FirestoreService {
   // --- List/Show Methods ---
 
   Future<String> createShow(Show show) async { // Added return type
-    // ... (logic) ...
-    DocumentReference docRef = await _db.collection(_listCollection).add(show.toMap());
+    Map<String, dynamic> showData = show.toMap();
+    showData['userId'] = show.userId; showData['spots'] = {}; showData['signedUpUserIds'] = [];
+    showData['createdAt'] = FieldValue.serverTimestamp(); showData.remove('id');
+    DocumentReference docRef = await _db.collection(_listCollection).add(showData);
     return docRef.id; // Added return
   }
 
   Future<void> updateShow(String listId, Map<String, dynamic> updateData) async { // Changed to accept Map
-    // Remove null values carefully
     updateData.removeWhere((key, value) => value == null && key != 'latitude' && key != 'longitude');
     await _db.collection(_listCollection).doc(listId).update(updateData);
   }
