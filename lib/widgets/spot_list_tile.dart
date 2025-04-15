@@ -1,16 +1,17 @@
 // lib/widgets/spot_list_tile.dart
 import 'package:flutter/material.dart';
 // Removed unused import: import 'package:animate_do/animate_do.dart';
-import 'package:myapp/host_screens/show_list_screen.dart' show SpotType; // Import only enum
+// Import enum from its definition file, NOT show_list_screen
+import 'package:myapp/models/spot_type.dart'; // Assuming you have this file
 
 class SpotListTile extends StatelessWidget {
   final String spotKey;
   final dynamic spotData;
   final String spotLabel;
   final SpotType spotType;
-  final int animationIndex; // Keep if FadeInUp is used in parent
+  final int animationIndex;
   final Function(String) onShowAddNameDialog;
-  final Function(String, String, bool, String) onShowSetOverDialog;
+  final Function(String, String, bool, String) onShowSetOverDialog; // Added performerId
   final Function(String, String) onDismissPerformer;
   final bool isReorderable;
   final int reorderIndex;
@@ -52,8 +53,7 @@ class SpotListTile extends StatelessWidget {
         textDecoration = isOver ? TextDecoration.lineThrough : TextDecoration.none;
      } else if (spotType == SpotType.bucket && isAvailable) { /* ... */ }
 
-     // Return the Card/ListTile directly (animation handled by parent)
-     return Card(
+     Widget tile = Card(
         child: ListTile(
            leading: Text(spotLabel, /* ... */),
            title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: titleWeight, decoration: textDecoration)),
@@ -67,6 +67,10 @@ class SpotListTile extends StatelessWidget {
                : null,
         ),
      );
-     // Dismissible logic is handled by the parent (_buildListWidgetContent)
+
+     // Apply dismissible if needed (logic moved back to show_list_screen)
+     // if (isPerformer && !isOver && isReorderable) { ... }
+
+     return tile; // Return the Card/ListTile directly
   }
 }
