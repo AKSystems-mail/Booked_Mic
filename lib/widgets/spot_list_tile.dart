@@ -1,26 +1,25 @@
-// widgets/spot_list_tile.dart
+// lib/widgets/spot_list_tile.dart
 import 'package:flutter/material.dart';
-import 'package:animate_do/animate_do.dart'; // Keep animation
-// To call Firestore actions
-import 'package:myapp/models/spot_type.dart';
+import 'package:animate_do/animate_do.dart'; // Assuming you use animation here
+import 'package:myapp/host_screens/show_list_screen.dart'; // Import enum definition
 
-// Define SpotType enum if not globally available
-// enum SpotType { regular, waitlist, bucket } // Make sure this is accessible
+// Assuming _SpotListItem is NOT defined here but passed via spotData or similar
 
 class SpotListTile extends StatelessWidget {
-  final String spotKey; // e.g., "1", "W1", "B1"
-  final Map<String, dynamic>? spotData; // Performer map, 'RESERVED', or null
-  final String spotLabel; // e.g., "1.", "W1.", "B1."
-  final SpotType spotType;
-  final int animationIndex; // For FadeInUp delay
+  final String spotKey;
+  final dynamic spotData; // Can be Map, null, or 'RESERVED'
+  final String spotLabel;
+  final SpotType spotType; // Use the enum
+  final int animationIndex;
+  final Function(String) onShowAddNameDialog;
+  final Function(String, String, bool, String) onShowSetOverDialog; // Added performerId
+  final Function(String, String) onDismissPerformer; // Takes key and performerId
+  final bool isReorderable;
+  final int reorderIndex;
 
-  // Callbacks for actions - defined in parent (ShowListScreen)
-  final Future<void> Function(String spotKey) onShowAddNameDialog;
-  final Future<void> Function(String spotKey, String performerName, bool currentStatus) onShowSetOverDialog;
-  final Future<void> Function(String spotKey, String performerName) onDismissPerformer;
 
   const SpotListTile({
-    super.key,
+    required Key key, // Use required Key for ReorderableListView items
     required this.spotKey,
     required this.spotData,
     required this.spotLabel,
@@ -29,102 +28,70 @@ class SpotListTile extends StatelessWidget {
     required this.onShowAddNameDialog,
     required this.onShowSetOverDialog,
     required this.onDismissPerformer,
-  });
+    this.isReorderable = false,
+    this.reorderIndex = 0,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    // Determine state from spotData
-    final bool isAvailable = spotData == null;
-    final bool isReserved = spotData == 'RESERVED';
-    final bool isPerformerSpot = !isAvailable && !isReserved && spotData is Map<String, dynamic>;
+     // Determine state from spotData
+     bool isAvailable = spotData == null;
+     // --- CORRECTED TYPE CHECK ---
+     bool isReserved = spotData is String && spotData == 'RESERVED';
+     // --- END CORRECTION ---
+     bool isPerformer = !isAvailable && !isReserved && spotData is Map<String, dynamic>;
+     String titleText = 'Available';
+     String performerName = '';
+     String performerId = '';
+     bool isOver = false;
+     Color titleColor = Colors.green.shade300;
+     FontWeight titleWeight = FontWeight.normal;
+     TextDecoration textDecoration = TextDecoration.none;
 
-    String titleText = 'Available';
-    String performerName = '';
-    bool isOver = false;
-    Color titleColor = Colors.green.shade300; // Default for available
-    FontWeight titleWeight = FontWeight.normal;
-    TextDecoration textDecoration = TextDecoration.none;
+     if (isReserved) { titleText = 'Reserved'; titleColor = Colors.orange.shade300; }
+     else if (isPerformer) {
+        final performerData = spotData as Map<String, dynamic>;
+        performerName = performerData['name'] ?? 'Unknown Performer';
+        performerId = performerData['userId'] ?? ''; // Extract ID
+        isOver = performerData['isOver'] ?? false;
+        titleText = performerName;
+        titleColor = isOver ? Colors.grey.shade500 : Theme.of(context).listTileTheme.textColor!;
+        titleWeight = FontWeight.w500;
+        textDecoration = isOver ? TextDecoration.lineThrough : TextDecoration.none;
+     } else if (spotType == SpotType.bucket && isAvailable) { titleText = 'Bucket Spot'; }
 
-    // --- TODO: This block might cause issues if spotData is invalid ---
-    // Add defensive checks if spotData format isn't guaranteed
-     if (!isPerformerSpot && !isReserved && !isAvailable) {
-         // Handle potential invalid data state? Default to available for now
-         // isAvailable = true; // Re-assess if needed
-         debugPrint("Warning: Spot $spotKey has unexpected data: $spotData");
-         titleText = 'Error: Invalid Data';
-         titleColor = Colors.red.shade300;
+     Widget tile = Card(
+        child: ListTile(
+           leading: Text(spotLabel, style: TextStyle(fontSize: 16, color: Theme.of(context).listTileTheme.leadingAndTrailingTextStyle?.color)),
+           title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: titleWeight, decoration: textDecoration)),
+           onTap: isAvailable && !isReserved
+               ? () => onShowAddNameDialog(spotKey)
+               : (isPerformer && !isOver)
+                   // Pass performerId to set over dialog
+                   ? () => onShowSetOverDialog(spotKey, performerName, isOver, performerId)
+                   : null,
+           trailing: isReorderable
+               ? ReorderableDragStartListener(
+                   index: reorderIndex,
+                   child: Icon(Icons.drag_handle, color: Colors.grey.shade500),
+                 )
+               : null,
+        ),
+     );
+
+     // Apply dismissible if it's a performer spot that's not over
+     if (isPerformer && !isOver && isReorderable) {
+        return Dismissible(
+           key: key!, // Use the key passed from builder
+           direction: DismissDirection.endToStart,
+           background: Container( /* ... Dismiss background ... */ ),
+           onDismissed: (direction) {
+              onDismissPerformer(spotKey, performerId); // Pass ID
+           },
+           child: tile,
+        );
+     } else {
+        return tile;
      }
-     // --- End potential issue block ---
-
-
-    if (isReserved) {
-      titleText = 'Reserved';
-      titleColor = Colors.orange.shade300;
-    } else if (isPerformerSpot) {
-      final performerData = spotData!; // Safe now due to isPerformerSpot check
-      performerName = performerData['name'] ?? 'Unknown Performer';
-      // --- Assumption: 'isOver' field exists/will be added ---
-      isOver = performerData['isOver'] ?? false;
-      // ------------------------------------------------------
-      titleText = performerName;
-      titleColor = isOver ? Colors.grey.shade500 : Colors.white; // Assuming dark theme context
-      titleWeight = FontWeight.w500;
-      textDecoration = isOver ? TextDecoration.lineThrough : TextDecoration.none;
-    } else if (spotType == SpotType.bucket && isAvailable) {
-      titleText = 'Bucket Spot';
-      // titleColor = Colors.green.shade300; // Already default
-    }
-     // Else: Regular available spot, defaults are fine
-
-    // Build the core ListTile content
-    Widget tileContent = Card(
-      key: ValueKey<String>('card_$spotKey'), // Ensure unique key
-      child: ListTile(
-        leading: Text(spotLabel, style: TextStyle(fontSize: 16)), // Adapt color if needed
-        title: Text(
-          titleText,
-          style: TextStyle(
-              color: titleColor,
-              fontWeight: titleWeight,
-              decoration: textDecoration),
-        ),
-        onTap: isAvailable && !isReserved
-            ? () => onShowAddNameDialog(spotKey) // Trigger dialog via callback
-            : (isPerformerSpot && !isOver)
-                ? () => onShowSetOverDialog(spotKey, performerName, isOver) // Trigger dialog via callback
-                : null,
-      ),
-    );
-
-    // Wrap with Dismissible if it's a performer spot that isn't over
-    Widget finalTile;
-    if (isPerformerSpot && !isOver) {
-      finalTile = Dismissible(
-        key: ValueKey<String>('dismissible_$spotKey'), // Ensure unique key
-        direction: DismissDirection.endToStart,
-        background: Container(
-          color: Colors.red.shade400,
-          alignment: Alignment.centerRight,
-          padding: EdgeInsets.only(right: 20.0),
-          child: Icon(Icons.delete, color: Colors.white),
-        ),
-        onDismissed: (direction) {
-          // Call parent method via callback
-          onDismissPerformer(spotKey, performerName);
-        },
-        // --- TODO: Add confirmDismiss dialog ---
-        // confirmDismiss: (direction) async { ... show confirmation dialog ... },
-        child: tileContent,
-      );
-    } else {
-      finalTile = tileContent;
-    }
-
-    // Wrap with animation
-    return FadeInUp(
-      delay: Duration(milliseconds: 50 * animationIndex),
-      duration: const Duration(milliseconds: 300),
-      child: finalTile,
-    );
   }
 }
