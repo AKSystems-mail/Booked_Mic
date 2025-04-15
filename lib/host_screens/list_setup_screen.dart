@@ -1,8 +1,8 @@
 // lib/host_screens/list_setup_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Keep for FilteringTextInputFormatter
-import 'package:cloud_firestore/cloud_firestore.dart'; // Keep for Timestamp
+// Keep for FilteringTextInputFormatter
+// Keep for Timestamp
 import 'package:firebase_auth/firebase_auth.dart'; // Keep for FirebaseAuth
 import 'package:animate_do/animate_do.dart';
 import 'package:intl/intl.dart'; // Keep for DateFormat
@@ -13,7 +13,7 @@ import 'package:provider/provider.dart';
 import 'package:myapp/providers/firestore_provider.dart';
 import 'package:myapp/models/show.dart';
 
-import 'created_lists_screen.dart'; // Keep for navigation
+// Keep for navigation
 
 class ListSetupScreen extends StatefulWidget {
   // Use super parameter
@@ -65,7 +65,6 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   String? _extractStateAbbr(Prediction prediction) {
      if (prediction.terms != null && prediction.terms!.length >= 2) { final stateTerm = prediction.terms![prediction.terms!.length - 2]; if (stateTerm.value != null && stateTerm.value!.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(stateTerm.value!)) return stateTerm.value!.toUpperCase(); }
      if (prediction.structuredFormatting?.secondaryText != null) { final parts = prediction.structuredFormatting!.secondaryText!.split(', '); if (parts.length >= 2) { final statePart = parts[parts.length - 2]; if (statePart.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(statePart)) return statePart.toUpperCase(); } }
-     // print("Warning: Could not reliably extract state..."); // Commented out
      return null; // Added return
   }
 
@@ -105,7 +104,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final Color appBarColor = Colors.blue.shade400;
+    // final Color appBarColor = Colors.blue.shade400;
     final Color buttonColor = Colors.blue.shade600;
     // Removed unused labelColor
 

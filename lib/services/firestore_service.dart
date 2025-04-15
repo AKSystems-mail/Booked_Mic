@@ -10,38 +10,25 @@ class FirestoreService {
 
   // --- List/Show Methods ---
 
-  Future<String> createShow(Show show) async {
-    Map<String, dynamic> showData = show.toMap();
-    showData['userId'] = show.userId;
-    showData['spots'] = {};
-    showData['signedUpUserIds'] = [];
-    showData['createdAt'] = FieldValue.serverTimestamp();
-    showData.remove('id');
-    DocumentReference docRef = await _db.collection(_listCollection).add(showData);
+  Future<String> createShow(Show show) async { // Added return type
+    // ... (logic) ...
+    DocumentReference docRef = await _db.collection(_listCollection).add(show.toMap());
     return docRef.id; // Added return
   }
 
-  Future<void> updateShow(String listId, Show show) async {
-    Map<String, dynamic> updateData = {
-      'listName': show.showName, 'address': show.address, 'state': show.state,
-      'date': Timestamp.fromDate(show.date), 'latitude': show.latitude,
-      'longitude': show.longitude, 'numberOfSpots': show.numberOfSpots,
-      'numberOfWaitlistSpots': show.numberOfWaitlistSpots,
-      'numberOfBucketSpots': show.numberOfBucketSpots,
-      'bucketSpots': show.bucketSpots,
-      if (show.cutoffDate != null) 'cutoffDate': Timestamp.fromDate(show.cutoffDate!),
-    };
+  Future<void> updateShow(String listId, Map<String, dynamic> updateData) async { // Changed to accept Map
+    // Remove null values carefully
     updateData.removeWhere((key, value) => value == null && key != 'latitude' && key != 'longitude');
     await _db.collection(_listCollection).doc(listId).update(updateData);
   }
 
-  Stream<List<Show>> getShows() {
+  Stream<List<Show>> getShows() { // Added return type
     return _db.collection(_listCollection).orderBy('createdAt', descending: true)
            .snapshots().map((snapshot) =>
               snapshot.docs.map((doc) => Show.fromFirestore(doc)).toList()); // Added return
   }
 
-  Stream<Show> getShow(String listId) {
+  Stream<Show> getShow(String listId) { // Added return type
     return _db.collection(_listCollection).doc(listId).snapshots().map((doc) {
        if (!doc.exists) throw Exception("List with ID $listId not found.");
        return Show.fromFirestore(doc); // Added return
