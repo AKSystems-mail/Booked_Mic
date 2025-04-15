@@ -1,6 +1,7 @@
 // lib/host_screens/created_lists_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Import this for PlatformException
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
@@ -77,8 +78,7 @@ Future<void> _showOptionsDialog(BuildContext context, String listId,
 }
 
 // Keep _downloadQRCode - IS used by dialog
-Future<void> _downloadQRCode(BuildContext context, String qrCodeData,
-    String listName, DateTime date) async {
+Future<void> _downloadQRCode(BuildContext context, String qrCodeData, String listName, DateTime date) async {
   if (!context.mounted) return;
   ScreenshotController screenshotController = ScreenshotController();
   final theme = Theme.of(context); // Used for text style
@@ -108,27 +108,40 @@ Future<void> _downloadQRCode(BuildContext context, String qrCodeData,
   try {
     // Pass the widget to capture
     final Uint8List? imageBytes = await screenshotController.captureFromWidget(
-       qrWidgetToCapture, // Pass the widget
-       context: context,
-       delay: const Duration(milliseconds: 100),
-    );
+       qrWidgetToCapture, context: context, delay: const Duration(milliseconds: 100),
+    );// Pass the widget
+       
     if (imageBytes == null) throw Exception('Failed to capture QR code widget.');
     final directory = await getTemporaryDirectory();
     final safeListName = listName.replaceAll(RegExp(r'[^\w\s]+'), '').replaceAll(' ', '_');
     final imagePath = '${directory.path}/qr_${safeListName}_${DateFormat('yyyyMMdd').format(date)}.png';
     final file = File(imagePath);
     await file.writeAsBytes(imageBytes);
-    final result = await FlutterImageGallerySaver.saveFile(file.path);
+    await FlutterImageGallerySaver.saveFile(file.path);
+    
     // print("Gallery Save Result: $result"); // Commented out
 
-    if (!context.mounted) return; // Re-check mounted
-    if (result != null && result['isSuccess'] == true) {
+    bool success = false;
+    String errorMessage = 'Unknown error';
+
+    try {
+      await FlutterImageGallerySaver.saveFile(file.path); success = true; // If await completes, assume success
+    } on PlatformException catch (e) {errorMessage = e.message ?? 'Platform error saving file.';
+    } catch (e) {
+      errorMessage = e.toString();
+    }
+
+    // 4. Show Feedback (Check mounted AFTER async gallery save attempt)
+    if (!context.mounted) return;
+
+    if (success) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR code with details saved to gallery.')));
     } else {
-       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save QR code. Error: ${result?['errorMessage'] ?? 'Unknown'}')));
+       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.orange));
     }
+    // --- End Platform Handling ---
+
   } catch (e) {
-    // print("Error downloading QR code: $e"); // Commented out
     if(context.mounted) {
        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to download QR code: $e')));
     }
