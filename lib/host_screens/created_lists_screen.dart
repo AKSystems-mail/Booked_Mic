@@ -10,7 +10,6 @@ import 'package:animate_do/animate_do.dart';
 // import 'package:qr_flutter/qr_flutter.dart'; // Keep if using QR generation
 import 'package:intl/intl.dart'; // Keep for date formatting
 import 'dart:io'; // Keep for File
-import 'dart:typed_data';
 import 'package:screenshot/screenshot.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_image_gallery_saver/flutter_image_gallery_saver.dart';
