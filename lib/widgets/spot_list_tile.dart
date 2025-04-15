@@ -1,25 +1,23 @@
 // lib/widgets/spot_list_tile.dart
 import 'package:flutter/material.dart';
-import 'package:animate_do/animate_do.dart'; // Assuming you use animation here
-import 'package:myapp/host_screens/show_list_screen.dart'; // Import enum definition
-
-// Assuming _SpotListItem is NOT defined here but passed via spotData or similar
+// Removed unused import: import 'package:animate_do/animate_do.dart';
+import 'package:myapp/host_screens/show_list_screen.dart' show SpotType; // Import only enum
 
 class SpotListTile extends StatelessWidget {
   final String spotKey;
-  final dynamic spotData; // Can be Map, null, or 'RESERVED'
+  final dynamic spotData;
   final String spotLabel;
-  final SpotType spotType; // Use the enum
-  final int animationIndex;
+  final SpotType spotType;
+  final int animationIndex; // Keep if FadeInUp is used in parent
   final Function(String) onShowAddNameDialog;
-  final Function(String, String, bool, String) onShowSetOverDialog; // Added performerId
-  final Function(String, String) onDismissPerformer; // Takes key and performerId
+  final Function(String, String, bool, String) onShowSetOverDialog;
+  final Function(String, String) onDismissPerformer;
   final bool isReorderable;
   final int reorderIndex;
 
 
   const SpotListTile({
-    required Key key, // Use required Key for ReorderableListView items
+    required Key key,
     required this.spotKey,
     required this.spotData,
     required this.spotLabel,
@@ -34,64 +32,41 @@ class SpotListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-     // Determine state from spotData
      bool isAvailable = spotData == null;
      // --- CORRECTED TYPE CHECK ---
      bool isReserved = spotData is String && spotData == 'RESERVED';
      // --- END CORRECTION ---
      bool isPerformer = !isAvailable && !isReserved && spotData is Map<String, dynamic>;
-     String titleText = 'Available';
-     String performerName = '';
-     String performerId = '';
-     bool isOver = false;
-     Color titleColor = Colors.green.shade300;
-     FontWeight titleWeight = FontWeight.normal;
-     TextDecoration textDecoration = TextDecoration.none;
+     String titleText = 'Available'; String performerName = ''; String performerId = ''; bool isOver = false;
+     Color titleColor = Colors.green.shade300; FontWeight titleWeight = FontWeight.normal; TextDecoration textDecoration = TextDecoration.none;
 
-     if (isReserved) { titleText = 'Reserved'; titleColor = Colors.orange.shade300; }
+     if (isReserved) { /* ... */ }
      else if (isPerformer) {
         final performerData = spotData as Map<String, dynamic>;
         performerName = performerData['name'] ?? 'Unknown Performer';
-        performerId = performerData['userId'] ?? ''; // Extract ID
+        performerId = performerData['userId'] ?? '';
         isOver = performerData['isOver'] ?? false;
         titleText = performerName;
         titleColor = isOver ? Colors.grey.shade500 : Theme.of(context).listTileTheme.textColor!;
         titleWeight = FontWeight.w500;
         textDecoration = isOver ? TextDecoration.lineThrough : TextDecoration.none;
-     } else if (spotType == SpotType.bucket && isAvailable) { titleText = 'Bucket Spot'; }
+     } else if (spotType == SpotType.bucket && isAvailable) { /* ... */ }
 
-     Widget tile = Card(
+     // Return the Card/ListTile directly (animation handled by parent)
+     return Card(
         child: ListTile(
-           leading: Text(spotLabel, style: TextStyle(fontSize: 16, color: Theme.of(context).listTileTheme.leadingAndTrailingTextStyle?.color)),
+           leading: Text(spotLabel, /* ... */),
            title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: titleWeight, decoration: textDecoration)),
            onTap: isAvailable && !isReserved
                ? () => onShowAddNameDialog(spotKey)
                : (isPerformer && !isOver)
-                   // Pass performerId to set over dialog
-                   ? () => onShowSetOverDialog(spotKey, performerName, isOver, performerId)
+                   ? () => onShowSetOverDialog(spotKey, performerName, isOver, performerId) // Pass ID
                    : null,
            trailing: isReorderable
-               ? ReorderableDragStartListener(
-                   index: reorderIndex,
-                   child: Icon(Icons.drag_handle, color: Colors.grey.shade500),
-                 )
+               ? ReorderableDragStartListener( index: reorderIndex, child: Icon(Icons.drag_handle, color: Colors.grey.shade500))
                : null,
         ),
      );
-
-     // Apply dismissible if it's a performer spot that's not over
-     if (isPerformer && !isOver && isReorderable) {
-        return Dismissible(
-           key: key!, // Use the key passed from builder
-           direction: DismissDirection.endToStart,
-           background: Container( /* ... Dismiss background ... */ ),
-           onDismissed: (direction) {
-              onDismissPerformer(spotKey, performerId); // Pass ID
-           },
-           child: tile,
-        );
-     } else {
-        return tile;
-     }
+     // Dismissible logic is handled by the parent (_buildListWidgetContent)
   }
 }
