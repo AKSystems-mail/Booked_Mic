@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:flutter/services.dart';
+
 
 // Import Models and Providers
 import 'package:myapp/models/show.dart';
@@ -119,11 +121,17 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
            );
         }
      );
-     if (newSeconds != null) {
-       bool success = await timerService.setLightThreshold(newSeconds);
-       if (!success && mounted) { _showErrorSnackbar('Error setting threshold.'); }
-       else if (success && mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Threshold set successfully.'))); }
-     }
+      if (!mounted) return;
+      if (newSeconds != null) {
+       try {
+           await timerService.setLightThreshold(newSeconds);
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Threshold must be less than total time (${timerService.totalSeconds} sec).'), backgroundColor: Colors.orange));
+          
+       } catch (e) {
+          _showErrorSnackbar('Failed to set threshold: $e');
+    }
+   }  
+     // --- *** END RESTORED LOGIC *** ---
   }
 
   Future<bool?> _showLightPromptDialog() async {
@@ -151,14 +159,55 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
     }
   }
 
+  // In class _ShowListScreenContentState within lib/host_screens/show_list_screen.dart
+
   Future<void> _showAddNameDialog(String spotKey) async {
+    // Check mounted before showing dialog
     if (!mounted) return;
-    TextEditingController nameController = TextEditingController();
-    final String? name = await showDialog<String>( context: context, builder: (BuildContext dialogContext) { return AlertDialog( /* ... Dialog UI using nameController ... */ ); });
+    TextEditingController nameController = TextEditingController(); // Keep declaration
+
+    final String? name = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+         return AlertDialog(
+            title: Text('Add Performer Name'),
+            content: TextField(
+              // --- *** ASSIGN CONTROLLER HERE *** ---
+              controller: nameController,
+              // --- *** END ASSIGNMENT *** ---
+              decoration: InputDecoration(labelText: 'Performer Name'),
+              autofocus: true,
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: Text('Cancel'),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+              TextButton(
+                child: Text('Add'),
+                // Pop with the text from the controller
+                onPressed: () => Navigator.of(dialogContext).pop(nameController.text),
+              ),
+            ],
+         ); // Return AlertDialog
+      }
+    );
+
+    // Check mounted after await
+    if (!mounted) return;
+
     if (name != null && name.isNotEmpty) {
-      if (!mounted) return;
-      try { await context.read<FirestoreProvider>().addManualNameToSpot(widget.listId, spotKey, name); if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Name added to spot.'))); } }
-      catch (e) { _showErrorSnackbar('Error adding name to spot.'); }
+      try {
+        await context.read<FirestoreProvider>().addManualNameToSpot(widget.listId, spotKey, name);
+        if (mounted) { // Check mounted before SnackBar
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added "$name" to spot $spotKey.')));
+        }
+      } catch (e) {
+        // print("Error adding name to spot: $e"); // Commented out
+         if (mounted) { // Check mounted before SnackBar
+           _showErrorSnackbar('Error adding name: $e');
+         }
+      }
     }
   }
 
@@ -168,6 +217,37 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
     catch (e) { _showErrorSnackbar('Error removing performer from spot.'); }
   }
 
+  Future<void> _saveReorderedList(List<_SpotListItem> reorderedList) async {
+     if (_isReordering || !mounted) return;
+     setState(() { _isReordering = true; });
+    Map<String, dynamic> newSpotsMap = {};
+     int regularCounter = 1; int waitlistCounter = 1; int bucketCounter = 1;
+     for (final item in reorderedList) {
+        String newKey;
+        switch (item.type) {
+           case SpotType.regular: newKey = regularCounter.toString(); regularCounter++; break;
+           case SpotType.waitlist: newKey = 'W$waitlistCounter'; waitlistCounter++; break;
+           case SpotType.bucket: newKey = 'B$bucketCounter'; bucketCounter++; break;
+        }
+        newSpotsMap[newKey] = item.data;
+     }
+
+  if (!mounted) return;
+
+     try {
+        // Use Provider to save the updated map
+        await context.read<FirestoreProvider>().saveReorderedSpots(widget.listId, newSpotsMap);
+        // print("Reordered list saved successfully."); // Commented out
+     } catch (e) {
+        // print("Error saving reordered list: $e"); // Commented out
+        if (mounted) _showErrorSnackbar('Error saving order: $e');
+     } finally {
+        // Allow stream to update the local list again
+        if (mounted) setState(() { _isReordering = false; });
+     }
+  }
+
+  
     List<_SpotListItem> _createOrderedList(Map<String, dynamic> spotsMap, int totalRegular, int totalWaitlist, int totalBucket) {
     List<_SpotListItem> items = [];
     int index = 0;
@@ -209,7 +289,7 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
               } else if (!snapshot.hasData || snapshot.data == null) {
                 return Text('List not found');
               } else {
-                return Text(snapshot.data!.title);
+                return Text(snapshot.data!.showName);
               }
             },
           ),
@@ -352,6 +432,5 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
     } catch (e) {
       return "Err";
     }
-    return "?";
   }
 }
