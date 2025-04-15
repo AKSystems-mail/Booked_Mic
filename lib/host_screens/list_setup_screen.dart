@@ -38,7 +38,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   DateTime? _selectedDate;
   bool _isLoading = false;
 
-  final String googleApiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? 'MISSING_API_KEY';
+  final String googleApiKey = dotenv.env['GOOGLE_PLACES_API_KEY'] ?? 'MISSING_API_KEY';
 
   @override
   @mustCallSuper
@@ -147,7 +147,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
 
     Widget bodyContent;
     if (googleApiKey == 'MISSING_API_KEY') {
-       bodyContent = Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text('ERROR: GOOGLE_MAPS_API_KEY is missing in your .env file. Address search will not work.', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16), textAlign: TextAlign.center)));
+       bodyContent = Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text('ERROR: GOOGLE_PLACES_API_KEY is missing in your .env file. Address search will not work.', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16), textAlign: TextAlign.center)));
     } else {
        bodyContent = Form(
           key: _formKey,
