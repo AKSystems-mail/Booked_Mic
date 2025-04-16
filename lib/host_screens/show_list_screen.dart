@@ -149,13 +149,19 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
   }
 
-  Future<void> _showSetOverDialog(String spotKey, String performerName, bool currentStatus) async {
+  Future<void> _showSetOverDialog(String spotKey, String performerName, bool currentStatus, String performerId) async {
     if (!mounted || currentStatus) return;
-    final bool? confirm = await showDialog<bool>( context: context, builder: (BuildContext dialogContext) { return AlertDialog( /* ... Dialog UI ... */ ); });
+    final bool? confirm = await showDialog<bool>( context: context, builder: (BuildContext dialogContext) { return AlertDialog(title: Text('Confirm Action'), content: Text('Mark "$performerName" as set over?'),
+             actions: <Widget>[ TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(dialogContext).pop(false)), TextButton(child: Text('Yes, Set Over', style: TextStyle(color: const Color.fromARGB(255, 65, 21, 105))), onPressed: () => Navigator.of(dialogContext).pop(true))],
+           );
+        }
+    );
     if (confirm == true) {
       if (!mounted) return;
-      try { await context.read<FirestoreProvider>().setSpotOver(widget.listId, spotKey, true, ''); if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Spot marked as over.'))); } }
-      catch (e) { _showErrorSnackbar('Error marking spot as over.'); }
+      try {
+        await context.read<FirestoreProvider>().setSpotOver(widget.listId, spotKey, true, performerId);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"$performerName" marked as over.'), duration: Duration(seconds: 2)));
+     } catch (e) { if (mounted) _showErrorSnackbar('Error updating status: $e'); }
     }
   }
 
@@ -211,10 +217,18 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
     }
   }
 
-  Future<void> _handleDismissPerformer(String spotKey, String performerId) async {
+  Future<void> _handleDismissPerformer(String spotKey, String performerId, String performerName) async {
+    // This function is called AFTER confirmDismiss returns true
     if (!mounted) return;
-    try { await context.read<FirestoreProvider>().removePerformerFromSpot(widget.listId, spotKey); }
-    catch (e) { _showErrorSnackbar('Error removing performer from spot.'); }
+   try {
+      await context.read<FirestoreProvider>().removePerformerFromSpot(widget.listId, spotKey);
+      // Show SnackBar confirmation (optional, as item is already visually gone)
+      // if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Removed "$performerName" from spot $spotKey.')));
+    } catch (e) {
+      // print("Error removing performer via provider: $e"); // Commented out
+      if (mounted) _showErrorSnackbar('Error removing performer: $e');
+      // If removal fails, the StreamBuilder will eventually bring the item back.
+    }
   }
 
   Future<void> _saveReorderedList(List<_SpotListItem> reorderedList) async {
@@ -275,7 +289,6 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
 
     return Theme(
       data: ThemeData.dark().copyWith(
-        // Add your dark theme overrides here
       ),
       child: Scaffold(
         appBar: AppBar(
@@ -352,7 +365,7 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
             titleColor = Colors.orange.shade300;
             titleWeight = FontWeight.bold;
           }
-
+          else if (item.type == SpotType.bucket && item.isAvailable) { /* ... */ }
           String spotLabel = _calculateSpotLabel(item, index, spotItems);
 
           Widget tileContent = FadeInUp(
@@ -363,7 +376,7 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
                 onTap: item.isAvailable && !item.isReserved
                     ? () => _showAddNameDialog(item.key)
                     : (item.isPerformer && !item.isOver)
-                        ? () => _showSetOverDialog(item.key, item.performerName, item.isOver)
+                        ? () => _showSetOverDialog(item.key, item.performerName, item.isOver, item.performerId)
                         : null,
                 trailing: ReorderableDragStartListener(
                   index: index,
@@ -376,12 +389,36 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
           if (item.isPerformer && !item.isOver) {
             return Dismissible(
               key: itemKey,
-              onDismissed: (direction) {
-                _handleDismissPerformer(item.key, item.performerId);
-                setState(() {
-                  _orderedSpotList.removeAt(index);
-                });
-              },
+              direction: DismissDirection.endToStart,
+                   background: Container( /* ... Dismiss background ... */ ),
+                   // --- ADD confirmDismiss ---
+                   confirmDismiss: (direction) async {
+                      // Show confirmation dialog BEFORE dismissing
+                      return await showDialog<bool>(
+                           context: context,
+                           builder: (BuildContext dialogContext) {
+                              return AlertDialog(
+                                 title: Text('Confirm Removal'),
+                                 content: Text('Remove "${item.performerName}" from spot $spotLabel?'),
+                                 actions: <Widget>[
+                                  TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(dialogContext).pop(false)), // Return false
+                                  TextButton(child: Text('Remove', style: TextStyle(color: Colors.red)), onPressed: () => Navigator.of(dialogContext).pop(true)), // Return true
+                               ],
+                            );
+                         }
+                      ) ?? false; // Return false if dialog is dismissed otherwise
+                   },
+              // Inside _buildListWidgetContent in lib/host_screens/show_list_screen.dart
+onDismissed: (direction) {
+    _handleDismissPerformer(item.key, item.performerId, item.performerName);
+    setState(() {
+        int currentIndex = _orderedSpotList.indexWhere((listItem) => listItem.key == item.key && listItem.originalIndex == item.originalIndex);
+        if (currentIndex != -1) {
+            _orderedSpotList.removeAt(currentIndex);
+        }
+    });
+},
+
               child: tileContent,
             );
           } else {
