@@ -248,83 +248,39 @@ class CreatedListsScreen extends StatelessWidget {
                   duration: const Duration(milliseconds: 400),
                   child: GestureDetector( // Or InkWell if you prefer that visual feedback
   onTap: () => _showOptionsDialog(context, docId, listName, qrCodeData, date), // Keep your existing onTap
-  onLongPress: () async {
-    // Show the menu with the delete option
-    final result = await showMenu<String>( // Specify the type <String>
-      context: context,
-      // Position the menu. Centering is a simple default for long press.
-      position: RelativeRect.fromLTRB(
-        MediaQuery.of(context).size.width / 3, // Adjust LTRB as needed
-        MediaQuery.of(context).size.height / 3,
-        MediaQuery.of(context).size.width / 3,
-        MediaQuery.of(context).size.height / 3,
-      ),
-      items: <PopupMenuEntry<String>>[ // Specify the type <String>
-        const PopupMenuItem<String>(
-          value: 'delete', // Value returned when this item is selected
-          child: Row(
-            children: [
-              Icon(Icons.delete_outline, color: Colors.red),
-              SizedBox(width: 8),
-              Text('Delete', style: TextStyle(color: Colors.red)),
-            ],
-          ),
+onLongPress: () async {
+  // Show the menu with the delete option
+  final result = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB( // Adjust position as needed
+      MediaQuery.of(context).size.width / 3,
+      MediaQuery.of(context).size.height / 3,
+      MediaQuery.of(context).size.width / 3,
+      MediaQuery.of(context).size.height / 3,
+    ),
+    items: <PopupMenuEntry<String>>[
+      const PopupMenuItem<String>(
+        value: 'delete',
+        child: Row(
+          children: [
+            Icon(Icons.delete_outline, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Delete', style: TextStyle(color: Colors.red)),
+          ],
         ),
-        // You could add more options here if needed
-      ],
-    );
+      ),
+    ],
+  );
 
     // If the user selected 'delete' from the menu
     if (result == 'delete') {
-      // Now show the confirmation dialog
-      final confirmDelete = await showDialog<bool>( // Specify the type <bool>
-        context: context,
-        builder: (BuildContext dialogContext) { // Use a different context name
-          return AlertDialog(
-            title: const Text("Confirm Delete"),
-            content: Text(
-                "Are you sure you want to delete '${listData?['listName'] ?? 'this list'}'? This action cannot be undone."), // Add warning
-            actions: <Widget>[
-              TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false), // Return false
-                  child: const Text("Cancel")),
-              TextButton(
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                  onPressed: () => Navigator.of(dialogContext).pop(true), // Return true
-                  child: const Text("Delete")),
-            ],
-          );
-        },
-      );
-
-      // If the user confirmed deletion in the dialog
-      if (confirmDelete == true) {
-        try {
-          await FirebaseFirestore.instance
-              .collection('Lists')
-              .doc(docId)
-              .delete();
-          if (context.mounted) { // Check context mounted before ScaffoldMessenger
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(
-                      "'${listData?['listName'] ?? 'List'}' deleted successfully.")),
-            );
-          }
-        } catch (error) {
-          print("Error deleting list: $error");
-          if (context.mounted) { // Check context mounted before ScaffoldMessenger
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(
-                      "Error deleting '${listData?['listName'] ?? 'List'}': $error"),
-                  backgroundColor: Colors.red), // Add background color
-            );
-          }
-        }
-      }
+await _showDeleteConfirmationDialog(
+  context,
+  docId,
+  listData['listName'] ?? 'this list'
+);
     }
-  },
+},
                      child: Card(
                        color: Colors.white.withAlpha((255 * 0.9).round()), // Use withAlpha
                        elevation: 3,
@@ -350,7 +306,7 @@ class CreatedListsScreen extends StatelessWidget {
                             ),
                           ),
                        ),
-                     ),
+                     )
                   ),
                 );
               },
