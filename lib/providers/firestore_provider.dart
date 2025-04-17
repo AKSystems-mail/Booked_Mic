@@ -48,6 +48,9 @@ class FirestoreProvider extends ChangeNotifier {
      // No notifyListeners needed here
   }
   // --- END ADDED ---
-
+  Future<void> resetListSpots(String listId) async {
+    await _firestoreService.resetListSpots(listId);
+    // No notifyListeners needed here, the Show stream will update the UI
+  }
   // --- Remove City/Performer methods if unused ---
 }

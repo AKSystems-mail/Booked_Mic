@@ -119,15 +119,17 @@ class _EditListScreenState extends State<EditListScreen> {
       final stateTerm = prediction.terms![prediction.terms!.length - 2];
       if (stateTerm.value != null &&
           stateTerm.value!.length == 2 &&
-          RegExp(r'^[a-zA-Z]+$').hasMatch(stateTerm.value!))
+          RegExp(r'^[a-zA-Z]+$').hasMatch(stateTerm.value!)) {
         return stateTerm.value!.toUpperCase();
+      }
     }
     if (prediction.structuredFormatting?.secondaryText != null) {
       final parts = prediction.structuredFormatting!.secondaryText!.split(', ');
       if (parts.length >= 2) {
         final statePart = parts[parts.length - 2];
-        if (statePart.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(statePart))
+        if (statePart.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(statePart)) {
           return statePart.toUpperCase();
+        }
       }
     }
     // print("Warning: Could not reliably extract state..."); // Commented out
@@ -180,15 +182,17 @@ class _EditListScreenState extends State<EditListScreen> {
       }
     } catch (e) {
       // print("Error updating list: $e"); // Commented out
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error updating list: $e'),
             backgroundColor: Colors.red));
+      }
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isSaving = false;
         });
+      }
     }
   }
 
@@ -223,11 +227,66 @@ class _EditListScreenState extends State<EditListScreen> {
         });
   }
 
+  Future<void> _showResetConfirmationDialog() async {
+    if (!mounted) return;
+    final bool? confirm = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text('Reset List?'),
+            content: Text(
+                'This will remove ALL performer names and signups from this list. Are you sure?'),
+            actions: <Widget>[
+              TextButton(
+                  child: Text('Cancel'),
+                  onPressed: () => Navigator.of(dialogContext).pop(false)),
+              TextButton(
+                  child: Text('Reset List',
+                      style: TextStyle(color: Colors.orange.shade700)),
+                  onPressed: () => Navigator.of(dialogContext).pop(true)),
+            ],
+          );
+        });
+
+    if (confirm == true && mounted) {
+      await _resetListSpots();
+    }
+  }
+
+  Future<void> _resetListSpots() async {
+    if (!mounted) return;
+    setState(() {
+      _isResetting = true;
+    });
+    try {
+      await context.read<FirestoreProvider>().resetListSpots(widget.listId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('List spots reset successfully.')));
+        // Optionally pop back after reset? Or stay to see empty list?
+        // Navigator.pop(context);
+      }
+    } catch (e) {
+      // print("Error resetting list: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error resetting list: $e'),
+            backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResetting = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color appBarColor = Colors.blue.shade400;
     final Color buttonColor = Colors.blue.shade600;
-    final Color labelColor = Colors.grey.shade800; // Used
+    final Color labelColor = Colors.orange.shade700; // Used
 
     // Initialize bodyContent
     Widget bodyContent;
@@ -243,10 +302,8 @@ class _EditListScreenState extends State<EditListScreen> {
                   textAlign: TextAlign.center)));
     } else {
       bodyContent = Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16.0),
-          children: [
+          key: _formKey,
+          child: ListView(padding: const EdgeInsets.all(16.0), children: [
             // Use FadeInDown if desired, otherwise remove
             TextFormField(
                 controller: _listNameController,
@@ -321,8 +378,11 @@ class _EditListScreenState extends State<EditListScreen> {
             _buildNumberTextField(
                 controller: _bucketController, label: 'Number of Bucket Spots'),
             const SizedBox(height: 32),
-            _isSaving
-                ? Center(child: CircularProgressIndicator(color: buttonColor))
+            _isSaving || _isResetting // Disable if saving or resetting
+                ? Center(
+                    child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16.0),
+                        child: CircularProgressIndicator(color: buttonColor)))
                 : ElevatedButton(
                     onPressed: _updateList,
                     style: ElevatedButton.styleFrom(
@@ -333,9 +393,28 @@ class _EditListScreenState extends State<EditListScreen> {
                             borderRadius: BorderRadius.circular(10.0))),
                     child: const Text('Save Changes',
                         style: TextStyle(fontSize: 18, color: Colors.white))),
-          ],
-        ),
-      );
+          ]));
+
+      const SizedBox(height: 20); // Spacing
+
+      // --- *** ADD RESET BUTTON *** ---
+      _isSaving || _isResetting // Disable if saving or resetting
+          ? const SizedBox.shrink() // Hide if loading
+          : OutlinedButton.icon(
+              // Use outlined for visual distinction
+              icon: Icon(Icons.refresh, color: resetButtonColor),
+              label: Text('Reset List Spots',
+                  style: TextStyle(
+                      color: resetButtonColor, fontWeight: FontWeight.bold)),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: resetButtonColor, width: 1.5),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10.0)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: _showResetConfirmationDialog,
+            );
+      // --- *** END RESET BUTTON *** ---
     }
 
     return Scaffold(
