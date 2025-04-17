@@ -57,7 +57,6 @@ class Show {
        parsedDate = (data['date'] as Timestamp).toDate();
     } else {
        parsedDate = DateTime.now();
-       print("Warning: Missing or invalid 'date' field for show ${doc.id}");
     }
 
     return Show(
