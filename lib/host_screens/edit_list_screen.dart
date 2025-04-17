@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:animate_do/animate_do.dart';
 
 import 'package:intl/intl.dart'; // Keep for DateFormat
 import 'package:google_places_flutter/google_places_flutter.dart';
@@ -11,6 +12,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 
 import 'package:myapp/providers/firestore_provider.dart';
+// import 'package:myapp/models/show.dart';
 
 // Keep Show model import
 
@@ -67,9 +69,6 @@ class _EditListScreenState extends State<EditListScreen> {
   }
 
   Future<void> _fetchListData() async {
-    setState(() {
-      _isLoading = true;
-    });
     try {
       final firestoreProvider = context.read<FirestoreProvider>();
       final showData = await firestoreProvider.getShow(widget.listId).first;
@@ -109,9 +108,7 @@ class _EditListScreenState extends State<EditListScreen> {
       lastDate: DateTime.now().add(Duration(days: 365 * 2)), // Added lastDate
     );
     if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
+      setState(() => _selectedDate = picked);
     }
   }
 
@@ -290,159 +287,208 @@ class _EditListScreenState extends State<EditListScreen> {
   Widget build(BuildContext context) {
     final Color appBarColor = Colors.blue.shade400;
     final Color buttonColor = Colors.blue.shade600;
-    final Color resetButtonColor = Colors.orange.shade700;
-    final Color labelColor = Colors.grey.shade800; // Used
-
-    // Initialize bodyContent
-    Widget bodyContent;
-    if (googleApiKey == 'MISSING_API_KEY') {
-      bodyContent = Center(
-          child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Text('ERROR: GOOGLE_PLACES_API_KEY is missing...',
-                  style: TextStyle(
-                      color: Colors.red,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16),
-                  textAlign: TextAlign.center)));
-    } else {
-      bodyContent = Form(
-          key: _formKey,
-          child: ListView(padding: const EdgeInsets.all(16.0), children: [
-            // Use FadeInDown if desired, otherwise remove
-            TextFormField(
-                controller: _listNameController,
-                style: TextStyle(color: Colors.black87),
-                decoration: InputDecoration(
-                  labelText: 'List Name',
-                  labelStyle:
-                      TextStyle(color: labelColor), /* ... borders ... */
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Enter name' : null),
-            const SizedBox(height: 16),
-            GooglePlaceAutoCompleteTextField(
-              textEditingController: _addressController,
-              googleAPIKey: googleApiKey,
-              inputDecoration: InputDecoration(
-                labelText: "Address / Venue",
-                labelStyle: TextStyle(color: labelColor),
-                hintText: "Search Address or Venue", /* ... */
-              ),
-              getPlaceDetailWithLatLng: (Prediction prediction) {
-                _addressController.text = prediction.description ?? '';
-                setState(() {
-                  _selectedAddressDescription = prediction.description;
-                  _selectedLat = double.tryParse(prediction.lat ?? '');
-                  _selectedLng = double.tryParse(prediction.lng ?? '');
-                  // --- *** CALL _extractStateAbbr HERE *** ---
-                  _selectedStateAbbr = _extractStateAbbr(prediction);
-                });
-                if (_selectedStateAbbr == null && mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(
-                          'Could not automatically determine state from address.'),
-                      backgroundColor: Colors.orange));
-                }
-              },
-              itemClick: (Prediction prediction) {/* ... */},
-            ),
-            const SizedBox(height: 16),
-            // Keep Date Picker - uses _selectDate and intl
-            Card(
-                color: Colors.white.withAlpha((255 * 0.9).round()),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                elevation: 0,
-                child: ListTile(
-                    leading:
-                        Icon(Icons.calendar_today, color: Colors.grey.shade700),
-                    title: Text('Show Date',
-                        style: TextStyle(color: Colors.grey.shade700)),
-                    subtitle: Text(
-                        _selectedDate == null
-                            ? 'Select Date'
-                            : DateFormat('EEE, MMM d, yyyy')
-                                .format(_selectedDate!),
-                        style: TextStyle(
-                            color: _selectedDate == null
-                                ? Colors.grey.shade500
-                                : Colors.black87,
-                            fontWeight: FontWeight.w500)),
-                    onTap: () => _selectDate(context),
-                    trailing: Icon(Icons.arrow_drop_down,
-                        color: Colors.grey.shade700))),
-            const SizedBox(height: 24),
-            _buildNumberTextField(
-                controller: _spotsController, label: 'Number of Regular Spots'),
-            const SizedBox(height: 16),
-            _buildNumberTextField(
-                controller: _waitlistController,
-                label: 'Number of Waitlist Spots'),
-            const SizedBox(height: 16),
-            _buildNumberTextField(
-                controller: _bucketController, label: 'Number of Bucket Spots'),
-            const SizedBox(height: 32),
-
-            _isSaving || _isResetting // Check both flags
-                ? Center(
-                    child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16.0),
-                        child: CircularProgressIndicator(color: buttonColor)))
-                : ElevatedButton(
-                    onPressed: _updateList,
-                    style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: buttonColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10.0))),
-                    child: const Text('Save Changes',
-                        style: TextStyle(fontSize: 18, color: Colors.white))),
-          ]));
-
-      const SizedBox(height: 20); // Spacing
-
-      // --- *** ADD RESET BUTTON *** ---
-      _isSaving || _isResetting // Disable if saving or resetting
-          ? const SizedBox.shrink() // Hide if loading
-          : OutlinedButton.icon(
-              // Use outlined for visual distinction
-              icon: Icon(Icons.refresh, color: resetButtonColor),
-              label: Text('Reset List Spots',
-                  style: TextStyle(
-                      color: resetButtonColor, fontWeight: FontWeight.bold)),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: resetButtonColor, width: 1.5),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10.0)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              onPressed: _showResetConfirmationDialog,
-            );
-      // --- *** END RESET BUTTON *** ---
-    }
+    final Color resetButtonColor = Colors.white;
+    final Color labelColor = Colors.grey.shade800;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: appBarColor,
-        elevation: 0,
-        foregroundColor: Colors.white,
-        iconTheme: IconThemeData(color: Colors.white),
-        title: Text('Edit List', style: TextStyle(color: Colors.white)),
-      ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-            gradient: LinearGradient(
-                begin: Alignment.topRight,
-                end: Alignment.bottomLeft,
-                colors: [Colors.blue.shade200, Colors.purple.shade100])),
-        child: _isLoading
-            ? Center(child: CircularProgressIndicator(color: appBarColor))
-            : bodyContent,
-      ),
-    );
+        appBar: AppBar(
+          backgroundColor: appBarColor,
+          elevation: 0,
+          foregroundColor: Colors.white,
+          iconTheme: IconThemeData(color: Colors.white),
+          title: Text('Edit List', style: TextStyle(color: Colors.white)),
+        ),
+        body: Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                    colors: [Colors.blue.shade200, Colors.purple.shade100])),
+            // --- Build content directly based on loading state ---
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator(color: appBarColor))
+                : (googleApiKey == 'MISSING_API_KEY'
+                    ? Center(
+                        child: Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Text(
+                                'ERROR: GOOGLE_MAPS_API_KEY is missing...',
+                                style: TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16),
+                                textAlign: TextAlign.center)))
+                    : Form(
+                        // Show form only if not loading and API key exists
+                        key: _formKey,
+                        child: ListView(
+                          padding: const EdgeInsets.all(16.0),
+                          children: [
+                            // List Name
+                            FadeInDown(
+                                duration: const Duration(milliseconds: 500),
+                                child: TextFormField(
+                                    controller: _listNameController,
+                                    style: TextStyle(color: Colors.black87),
+                                    decoration: InputDecoration(
+                                      labelText: 'List Name',
+                                      labelStyle: TextStyle(
+                                          color:
+                                              labelColor), /* ... borders ... */
+                                    ),
+                                    validator: (v) =>
+                                        (v == null || v.trim().isEmpty)
+                                            ? 'Enter name'
+                                            : null)),
+                            const SizedBox(height: 16),
+                            // Address Autocomplete
+                            FadeInDown(
+                              duration: const Duration(milliseconds: 600),
+                              child: GooglePlaceAutoCompleteTextField(
+                                textEditingController: _addressController,
+                                googleAPIKey: googleApiKey,
+                                inputDecoration: InputDecoration(
+                                  labelText: "Address / Venue",
+                                  labelStyle: TextStyle(color: labelColor),
+                                  hintText: "Search Address or Venue", /* ... */
+                                ),
+                      getPlaceDetailWithLatLng: (Prediction prediction) {
+                         _addressController.text = prediction.description ?? '';
+                         setState(() {
+                            _selectedAddressDescription = prediction.description;
+                            _selectedLat = double.tryParse(prediction.lat ?? '');
+                            _selectedLng = double.tryParse(prediction.lng ?? '');
+                            // --- *** CALL _extractStateAbbr HERE *** ---
+                            _selectedStateAbbr = _extractStateAbbr(prediction);
+                            // --- *** END CALL *** ---
+                         });
+                         // Show warning if state couldn't be extracted
+                         if (_selectedStateAbbr == null && mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not automatically determine state from address.'), backgroundColor: Colors.orange));
+                         }
+                         // else { print("Extracted State: $_selectedStateAbbr"); } // Commented out
+                      },
+                                itemClick: (Prediction prediction) {
+                                  /* ... Update controller ... */
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            // Date Picker
+                            FadeInDown(
+                                duration: const Duration(milliseconds: 700),
+                                child: Card(
+                                    color: Colors.white
+                                        .withAlpha((255 * 0.9).round()),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
+                                    elevation: 0,
+                                    child: ListTile(
+                                        leading: Icon(Icons.calendar_today,
+                                            color: Colors.grey.shade700),
+                                        title: Text('Show Date',
+                                            style: TextStyle(
+                                                color: Colors.grey.shade700)),
+                                        subtitle: Text(
+                                            _selectedDate == null
+                                                ? 'Select Date'
+                                                : DateFormat('EEE, MMM d, yyyy')
+                                                    .format(_selectedDate!),
+                                            style: TextStyle(
+                                                color: _selectedDate == null
+                                                    ? Colors.grey.shade500
+                                                    : Colors.black87,
+                                                fontWeight: FontWeight.w500)),
+                                        onTap: () => _selectDate(context),
+                                        trailing:
+                                            Icon(Icons.arrow_drop_down, color: Colors.grey.shade700)))),
+                            const SizedBox(height: 24),
+                            // Spot Number Fields
+                            FadeInDown(
+                                duration: const Duration(milliseconds: 800),
+                                child: _buildNumberTextField(
+                                    controller: _spotsController,
+                                    label: 'Number of Regular Spots')),
+                            const SizedBox(height: 16),
+                            FadeInDown(
+                                duration: const Duration(milliseconds: 900),
+                                child: _buildNumberTextField(
+                                    controller: _waitlistController,
+                                    label: 'Number of Waitlist Spots')),
+                            const SizedBox(height: 16),
+                            FadeInDown(
+                                duration: const Duration(milliseconds: 1000),
+                                child: _buildNumberTextField(
+                                    controller: _bucketController,
+                                    label: 'Number of Bucket Spots')),
+                            const SizedBox(height: 32),
+
+                            // --- Save Button ---
+                            // Use ElevatedButton, disable based on state
+                            ElevatedButton(
+                              // Disable if saving OR resetting
+                              onPressed: (_isSaving || _isResetting)
+                                  ? null
+                                  : _updateList,
+                              style: ElevatedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: buttonColor,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(10.0))),
+                              child:
+                                  (_isSaving) // Show progress indicator if saving
+                                      ? SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white))
+                                      : const Text('Save Changes',
+                                          style: TextStyle(
+                                              fontSize: 18,
+                                              color: Colors.white)),
+                            ),
+                            // --- End Save Button ---
+
+                            const SizedBox(height: 20),
+
+                            // --- Reset Button ---
+                            // Use OutlinedButton, disable based on state
+                            ElevatedButton.icon(
+                              icon: Icon(Icons.refresh,
+                                  color: (_isSaving || _isResetting)
+                                      ? Colors.grey
+                                      : resetButtonColor), // Grey out icon when disabled
+                              label: Text('Reset List',
+                                  style: TextStyle(
+                                      color: (_isSaving || _isResetting)
+                                          ? Colors.grey
+                                          : Colors.white,
+                                      fontWeight: FontWeight.bold)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10.0)),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              // Disable if saving OR resetting
+                              onPressed: (_isSaving || _isResetting)
+                                  ? null
+                                  : _showResetConfirmationDialog,
+                            )
+                          ],
+                        ),
+                      )
+
+                // --- *** END RESET BUTTON *** ---
+
+                )));
   }
 }

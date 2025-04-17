@@ -173,7 +173,6 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                             _selectedStateAbbr = _extractStateAbbr(prediction);
                          });
                          if (_selectedStateAbbr == null && mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not automatically determine state from address.'), backgroundColor: Colors.orange)); }
-                         // else { print("Extracted State: $_selectedStateAbbr"); } // Commented out
                       },
                       itemClick: (Prediction prediction) { _addressController.text = prediction.description ?? ''; _addressController.selection = TextSelection.fromPosition(TextPosition(offset: prediction.description?.length ?? 0)); },
                    ),

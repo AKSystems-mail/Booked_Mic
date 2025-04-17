@@ -120,38 +120,23 @@ class NotificationController {
   /// Use this method to detect when a new notification or a schedule is created
   @pragma("vm:entry-point")
   static Future <void> onNotificationCreatedMethod(ReceivedNotification receivedNotification) async {
-    print('NOTIFICATION CREATED: ${receivedNotification.id}');
   }
 
   /// Use this method to detect every time that a new notification is displayed
   @pragma("vm:entry-point")
   static Future <void> onNotificationDisplayedMethod(ReceivedNotification receivedNotification) async {
-    print('NOTIFICATION DISPLAYED: ${receivedNotification.id}');
   }
 
   /// Use this method to detect if the user dismissed a notification
   @pragma("vm:entry-point")
   static Future <void> onDismissActionReceivedMethod(ReceivedAction receivedAction) async {
-    print('NOTIFICATION DISMISSED: ${receivedAction.id}');
   }
 
   /// Use this method to detect when the user taps on a notification or action button
   @pragma("vm:entry-point")
   static Future <void> onActionReceivedMethod(ReceivedAction receivedAction) async {
-    print('NOTIFICATION ACTION RECEIVED: ${receivedAction.id}');
     final payload = receivedAction.payload; // Payload is a Map<String?, String?>?
     if (payload != null) {
-       print('Payload: $payload');
-       // TODO: Implement navigation based on payload.
-       // This is tricky from a background isolate. Often requires
-       // saving the target route/data and handling it when the app resumes,
-       // or using a more complex setup with Navigator keys accessible globally.
-       // Example concept:
-       // if (payload.containsKey('listId')) {
-       //   String? listId = payload['listId'];
-       //   print("Navigate to list: $listId");
-       //   // MyApp.navigatorKey.currentState?.pushNamed('/listDetail', arguments: listId); // If using global key
-       // }
     }
   }
 }
@@ -200,15 +185,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
     Future<void> _requestNotificationPermission() async {
        bool isAllowed = await AwesomeNotifications().isNotificationAllowed();
        if (!isAllowed && mounted) { // Check mounted before showing dialog
-          print("Requesting notification permission...");
-          // Consider showing a dialog explaining why first
-          // await showDialog(...);
           await AwesomeNotifications().requestPermissionToSendNotifications();
           // Re-check status after request
           isAllowed = await AwesomeNotifications().isNotificationAllowed();
-          print("Permission allowed after request: $isAllowed");
        } else {
-          print("Notifications already allowed or widget not mounted.");
        }
     }
 
@@ -236,13 +216,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
                   return Scaffold(body: Center(child: CircularProgressIndicator()));
                 }
                 if (roleSnapshot.hasError) {
-                   print("Error fetching saved role: ${roleSnapshot.error}");
                    return Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text("Error loading user profile. Please try restarting the app.\n(${roleSnapshot.error})", textAlign: TextAlign.center))));
                 }
 
                 final role = roleSnapshot.data;
-                if (role == 'host') return CreatedListsScreen();
-                else if (role == 'performer') return PerformerListScreen();
+                if (role == 'host') {
+                  return CreatedListsScreen();
+                } else if (role == 'performer') return PerformerListScreen();
                 else return RoleSelectionScreen();
               },
             );
