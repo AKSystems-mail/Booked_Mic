@@ -117,9 +117,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
               notificationLayout: NotificationLayout.Default,
            ),
         );
-        print("Awesome notification created for $listId: $body");
      } catch (e) {
-        print("Error creating awesome notification: $e");
      }
   }
   // --- End Helper ---
@@ -156,7 +154,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
               if (currentPositionIndex != -1) {
                  final lastPosition = _lastNotifiedPositionNotifier.value[listId];
                  if (lastPosition == null || lastPosition != currentPositionIndex) {
-                    print("Position change detected for $listId: $lastPosition -> $currentPositionIndex");
                     final String listName = listData['listName'] ?? 'Unnamed List';
                     _showPositionNotification(listId, listName, currentPositionIndex);
                  }

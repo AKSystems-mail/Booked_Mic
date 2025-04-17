@@ -7,13 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:qr_flutter/qr_flutter.dart'; // Re-add for QrImageView and QrPainter
-import 'package:intl/intl.dart';
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:screenshot/screenshot.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:flutter_image_gallery_saver/flutter_image_gallery_saver.dart';
-import 'package:flutter/services.dart';
 
 // Import necessary screens
 import 'list_setup_screen.dart';
