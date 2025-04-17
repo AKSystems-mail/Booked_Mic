@@ -2,15 +2,16 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-// Removed unused import: import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'package:intl/intl.dart'; // Keep for DateFormat
 import 'package:google_places_flutter/google_places_flutter.dart';
 import 'package:google_places_flutter/model/prediction.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:myapp/providers/firestore_provider.dart';
+
 // Keep Show model import
 
 class EditListScreen extends StatefulWidget {
@@ -38,6 +39,7 @@ class _EditListScreenState extends State<EditListScreen> {
   DateTime? _selectedDate;
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isResetting = false; // Declare _isResetting
 
   final String googleApiKey =
       dotenv.env['GOOGLE_PLACES_API_KEY'] ?? 'MISSING_API_KEY';
@@ -127,7 +129,8 @@ class _EditListScreenState extends State<EditListScreen> {
       final parts = prediction.structuredFormatting!.secondaryText!.split(', ');
       if (parts.length >= 2) {
         final statePart = parts[parts.length - 2];
-        if (statePart.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(statePart)) {
+        if (statePart.length == 2 &&
+            RegExp(r'^[a-zA-Z]+$').hasMatch(statePart)) {
           return statePart.toUpperCase();
         }
       }
@@ -227,6 +230,7 @@ class _EditListScreenState extends State<EditListScreen> {
         });
   }
 
+  // --- Reset List Functions ---
   Future<void> _showResetConfirmationDialog() async {
     if (!mounted) return;
     final bool? confirm = await showDialog<bool>(
@@ -255,6 +259,7 @@ class _EditListScreenState extends State<EditListScreen> {
 
   Future<void> _resetListSpots() async {
     if (!mounted) return;
+    // Use _isResetting here
     setState(() {
       _isResetting = true;
     });
@@ -263,11 +268,9 @@ class _EditListScreenState extends State<EditListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('List spots reset successfully.')));
-        // Optionally pop back after reset? Or stay to see empty list?
-        // Navigator.pop(context);
       }
     } catch (e) {
-      // print("Error resetting list: $e");
+      // print("Error resetting list: $e"); // Commented out
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error resetting list: $e'),
@@ -275,6 +278,7 @@ class _EditListScreenState extends State<EditListScreen> {
       }
     } finally {
       if (mounted) {
+        // Use _isResetting here
         setState(() {
           _isResetting = false;
         });
@@ -286,7 +290,8 @@ class _EditListScreenState extends State<EditListScreen> {
   Widget build(BuildContext context) {
     final Color appBarColor = Colors.blue.shade400;
     final Color buttonColor = Colors.blue.shade600;
-    final Color labelColor = Colors.orange.shade700; // Used
+    final Color resetButtonColor = Colors.orange.shade700;
+    final Color labelColor = Colors.grey.shade800; // Used
 
     // Initialize bodyContent
     Widget bodyContent;
@@ -378,7 +383,8 @@ class _EditListScreenState extends State<EditListScreen> {
             _buildNumberTextField(
                 controller: _bucketController, label: 'Number of Bucket Spots'),
             const SizedBox(height: 32),
-            _isSaving || _isResetting // Disable if saving or resetting
+
+            _isSaving || _isResetting // Check both flags
                 ? Center(
                     child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 16.0),
