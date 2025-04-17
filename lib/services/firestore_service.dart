@@ -109,6 +109,20 @@ class FirestoreService {
     }
   }
 
+    Future<void> resetListSpots(String listId) async {
+    try {
+      // Update the document to set spots to empty map and signedUpUserIds to empty array
+      await _db.collection(_listCollection).doc(listId).update({
+        'spots': {}, // Clear the spots map
+        'signedUpUserIds': [], // Clear the user IDs array
+      });
+      print("Successfully reset spots for list $listId");
+    } catch (e) {
+      print("Error resetting spots for list $listId: $e");
+      rethrow; // Rethrow error
+    }
+  }
+  
   // In FirestoreService class
 
   Future<void> addManualNameToSpot(
