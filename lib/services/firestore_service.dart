@@ -143,6 +143,45 @@ class FirestoreService {
     }
   }
   
+  Stream<int> getBucketSignupCountStream(String listId) {
+    return _db.collection(_listCollection).doc(listId)
+              .collection('bucketSignups')
+              .snapshots()
+              .map((snapshot) => snapshot.size); // Map snapshot to size (count)
+  }
+
+  // Check if a specific user is in the bucket
+  Future<bool> isUserInBucket(String listId, String userId) async {
+     try {
+        final doc = await _db.collection(_listCollection).doc(listId)
+                         .collection('bucketSignups').doc(userId).get();
+        return doc.exists;
+     } catch (e) {
+        print("Error checking user in bucket: $e");
+        return false; // Assume not in bucket on error
+     }
+  }
+
+  // Add user to bucket
+  Future<void> addUserToBucket(String listId, String userId, String stageName) async {
+     try {
+        await _db.collection(_listCollection).doc(listId)
+                 .collection('bucketSignups').doc(userId) // Use userId as doc ID
+                 .set({
+                    'userId': userId,
+                    'stageName': stageName,
+                    'timestamp': FieldValue.serverTimestamp(),
+                 });
+     } catch (e) { print("Error adding user to bucket: $e"); rethrow; }
+  }
+
+  // Remove user from bucket
+  Future<void> removeUserFromBucket(String listId, String userId) async {
+     try {
+        await _db.collection(_listCollection).doc(listId)
+                 .collection('bucketSignups').doc(userId).delete();
+     } catch (e) { print("Error removing user from bucket: $e"); rethrow; }
+  }
   // In FirestoreService class
 
   Future<void> addManualNameToSpot(
