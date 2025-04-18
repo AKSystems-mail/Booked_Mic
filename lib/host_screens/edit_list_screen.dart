@@ -44,7 +44,7 @@ class _EditListScreenState extends State<EditListScreen> {
   bool _isResetting = false; // Declare _isResetting
 
   final String googleApiKey =
-      dotenv.env['GOOGLE_PLACES_API_KEY'] ?? 'MISSING_API_KEY';
+      dotenv.env['GOOGLE_MAPS_API_KEY'] ?? 'MISSING_API_KEY';
 
   @override
   void initState() {
@@ -354,22 +354,32 @@ class _EditListScreenState extends State<EditListScreen> {
                                   labelStyle: TextStyle(color: labelColor),
                                   hintText: "Search Address or Venue", /* ... */
                                 ),
-                      getPlaceDetailWithLatLng: (Prediction prediction) {
-                         _addressController.text = prediction.description ?? '';
-                         setState(() {
-                            _selectedAddressDescription = prediction.description;
-                            _selectedLat = double.tryParse(prediction.lat ?? '');
-                            _selectedLng = double.tryParse(prediction.lng ?? '');
-                            // --- *** CALL _extractStateAbbr HERE *** ---
-                            _selectedStateAbbr = _extractStateAbbr(prediction);
-                            // --- *** END CALL *** ---
-                         });
-                         // Show warning if state couldn't be extracted
-                         if (_selectedStateAbbr == null && mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not automatically determine state from address.'), backgroundColor: Colors.orange));
-                         }
-                         // else { print("Extracted State: $_selectedStateAbbr"); } // Commented out
-                      },
+                                getPlaceDetailWithLatLng:
+                                    (Prediction prediction) {
+                                  _addressController.text =
+                                      prediction.description ?? '';
+                                  setState(() {
+                                    _selectedAddressDescription =
+                                        prediction.description;
+                                    _selectedLat =
+                                        double.tryParse(prediction.lat ?? '');
+                                    _selectedLng =
+                                        double.tryParse(prediction.lng ?? '');
+                                    // --- *** CALL _extractStateAbbr HERE *** ---
+                                    _selectedStateAbbr =
+                                        _extractStateAbbr(prediction);
+                                    // --- *** END CALL *** ---
+                                  });
+                                  // Show warning if state couldn't be extracted
+                                  if (_selectedStateAbbr == null && mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                            content: Text(
+                                                'Could not automatically determine state from address.'),
+                                            backgroundColor: Colors.orange));
+                                  }
+                                  // else { print("Extracted State: $_selectedStateAbbr"); } // Commented out
+                                },
                                 itemClick: (Prediction prediction) {
                                   /* ... Update controller ... */
                                 },
@@ -471,8 +481,8 @@ class _EditListScreenState extends State<EditListScreen> {
                                           ? Colors.grey
                                           : Colors.white,
                                       fontWeight: FontWeight.bold)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10.0)),
                                 padding:
