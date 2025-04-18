@@ -109,17 +109,37 @@ class FirestoreService {
     }
   }
 
-    Future<void> resetListSpots(String listId) async {
+  Future<void> resetListSpots(String listId) async {
+    final listRef = _db.collection(_listCollection).doc(listId);
+    final bucketSignupsRef = listRef.collection('bucketSignups');
+
     try {
-      // Update the document to set spots to empty map and signedUpUserIds to empty array
-      await _db.collection(_listCollection).doc(listId).update({
-        'spots': {}, // Clear the spots map
-        'signedUpUserIds': [], // Clear the user IDs array
+      // 1. Delete all documents in the bucketSignups subcollection
+      // Fetch docs in batches to avoid memory issues if list is huge
+      QuerySnapshot snapshot;
+      do {
+        snapshot = await bucketSignupsRef.limit(100).get(); // Get up to 100 docs
+        if (snapshot.docs.isNotEmpty) {
+          WriteBatch batch = _db.batch();
+          for (DocumentSnapshot doc in snapshot.docs) {
+            batch.delete(doc.reference);
+          }
+          await batch.commit(); // Commit the batch delete
+          print("Deleted ${snapshot.docs.length} bucket signups for list $listId");
+        }
+      } while (snapshot.docs.isNotEmpty); // Continue until subcollection is empty
+
+      // 2. Update the main document to clear spots and signedUpUserIds
+      await listRef.update({
+        'spots': {},
+        'signedUpUserIds': [],
       });
-      print("Successfully reset spots for list $listId");
+
+      print("Successfully reset spots and cleared bucket for list $listId");
+
     } catch (e) {
-      print("Error resetting spots for list $listId: $e");
-      rethrow; // Rethrow error
+      print("Error resetting spots/bucket for list $listId: $e");
+      rethrow;
     }
   }
   
