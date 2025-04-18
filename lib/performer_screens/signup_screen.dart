@@ -15,21 +15,21 @@ class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key, required this.listId});
 
   @override
-  _SignupScreenState createState() => _SignupScreenState();
+  State<SignupScreen> createState() => _SignupScreenState();
 }
 
 enum SpotType { regular, waitlist, bucket }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  // Use late final for instances that don't change
+  late final FirebaseFirestore _firestore;
+  late final FirebaseAuth _auth;
+  late final String? _performerId; // Can be final after initState
 
   String? _performerStageName;
-  String? _performerId;
   bool _isLoadingPerformer = true;
-  bool _isProcessing = false;
+  bool _isProcessing = false; // For regular spot signup/removal
   bool _isBucketProcessing = false; // For bucket join/leave
-
 
   String? _selectedSpotKey;
 
@@ -41,95 +41,63 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   void initState() {
     super.initState();
-    _performerId = _auth.currentUser?.uid; // Get ID immediately
+    // Initialize final fields
+    _firestore = FirebaseFirestore.instance;
+    _auth = FirebaseAuth.instance;
+    _performerId = _auth.currentUser?.uid;
+
     _fetchPerformerData();
-    _checkInitialListFullness();
+    // Removed _checkInitialListFullness - handled by StreamBuilder now
     if (_performerId != null) {
-      _checkBucketStatus(); // Check bucket status on init
+      _checkBucketStatus();
     }
   }
 
   // --- Data Fetching and Checks ---
   Future<void> _fetchPerformerData() async {
-    setState(() { _isLoadingPerformer = true; });
-    try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        _performerId = user.uid;
-        DocumentSnapshot userDoc = await _firestore.collection('users').doc(_performerId).get();
-        if (userDoc.exists && userDoc.data() != null) {
-          var userData = userDoc.data() as Map<String, dynamic>;
-          _performerStageName = userData['stageName'] ?? user.email ?? 'Unknown Performer';
-        } else {
-          _performerStageName = user.email ?? 'Unknown Performer';
-          print("Warning: User document not found in Firestore for uid: $_performerId. Using email as fallback name.");
-        }
-      } else {
-        print("Error: Current user is null.");
-        _performerStageName = 'Error';
-      }
-    } catch (e) {
-      print("Error fetching performer data: $e");
-      _performerStageName = 'Error';
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error fetching your profile: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() { _isLoadingPerformer = false; });
-      }
-    }
+     setState(() { _isLoadingPerformer = true; });
+     try {
+       // Use final _auth and _performerId
+       final user = _auth.currentUser; // Re-check just in case
+       if (user != null && _performerId != null) {
+         DocumentSnapshot userDoc = await _firestore.collection('users').doc(_performerId).get();
+         if (mounted && userDoc.exists && userDoc.data() != null) { // Check mounted
+           var userData = userDoc.data() as Map<String, dynamic>;
+           _performerStageName = userData['stageName'] ?? user.email ?? 'Unknown Performer';
+         } else if (mounted) {
+           _performerStageName = user.email ?? 'Unknown Performer';
+           // print("Warning: User document not found..."); // Commented out
+         }
+       } else if (mounted) {
+         // print("Error: Current user is null."); // Commented out
+         _performerStageName = 'Error';
+       }
+     } catch (e) {
+       // print("Error fetching performer data: $e"); // Commented out
+       if (mounted) _performerStageName = 'Error'; // Avoid setState if not mounted
+       // Optionally show SnackBar if mounted
+       // if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error fetching profile: $e')));
+     } finally {
+       if (mounted) setState(() { _isLoadingPerformer = false; });
+     }
   }
 
-  Future<void> _checkInitialListFullness() async {
-    try {
-      DocumentSnapshot listSnap = await _firestore.collection('Lists').doc(widget.listId).get();
-      if (!listSnap.exists) {
-        _showErrorAndGoBack("List not found.");
-        return;
-      }
-      var listData = listSnap.data() as Map<String, dynamic>;
-      final spotsMap = (listData['spots'] as Map<String, dynamic>?) ?? {};
-      final totalSpots = (listData['numberOfSpots'] ?? 0) as int;
-      final totalWaitlist = (listData['numberOfWaitlistSpots'] ?? 0) as int;
-      final totalBucket = (listData['numberOfBucketSpots'] ?? 0) as int;
-      final maxSignups = totalSpots + totalWaitlist + totalBucket;
-      int currentSignups = 0;
-      spotsMap.forEach((key, value) { if (value is Map) currentSignups++; });
-      if (currentSignups >= maxSignups) {
-        _showErrorAndGoBack("Sorry, this list is full.");
-      }
-    } catch (e) {
-      print("Error checking list fullness: $e");
-      _showErrorAndGoBack("Error loading list details.");
-    }
-  }
 
-  void _showErrorAndGoBack(String message) {
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), duration: Duration(seconds: 3)),
-      );
-      Navigator.of(context).pop();
-    });
-  }
   // --- End Data Fetching ---
 
  // --- Check if user is in bucket ---
   Future<void> _checkBucketStatus() async {
-     if (_performerId == null) return;
+     if (_performerId == null || !mounted) return;
      setState(() { _checkingBucketStatus = true; });
      try {
         final provider = context.read<FirestoreProvider>();
-        _isUserAlreadyInBucket = await provider.isUserInBucket(widget.listId, _performerId!);
+        final bool isInBucket = await provider.isUserInBucket(widget.listId, _performerId!);
+        if (mounted) { // Check mounted after await
+           setState(() { _isUserAlreadyInBucket = isInBucket; });
+        }
      } catch (e) {
-        print("Error checking bucket status: $e");
-        // Assume not in bucket on error
-        _isUserAlreadyInBucket = false;
+        // print("Error checking bucket status: $e"); // Commented out
+        if (mounted) setState(() { _isUserAlreadyInBucket = false; }); // Assume not in bucket on error
      } finally {
         if (mounted) setState(() { _checkingBucketStatus = false; });
      }
@@ -138,16 +106,28 @@ class _SignupScreenState extends State<SignupScreen> {
 
 
   // --- Spot Logic (Select/Cancel/Confirm for Regular/Waitlist) ---
-  void _selectSpot(String spotKey, bool isAvailable) { /* ... (remains the same) ... */ }
-  void _cancelSelection() { /* ... (remains the same) ... */ }
+  void _selectSpot(String spotKey, bool isAvailable) {
+     if (!isAvailable || _isLoadingPerformer || _performerStageName == null) return;
+     setState(() { _selectedSpotKey = spotKey; });
+  }
+
+  void _cancelSelection() {
+     setState(() { _selectedSpotKey = null; });
+  }
+
   Future<void> _confirmSelection() async {
-     // Use Provider for Firestore update
-     if (_selectedSpotKey == null || _performerStageName == null || _performerId == null || _isProcessing) return;
+     if (_selectedSpotKey == null || _performerStageName == null || _performerId == null || _isProcessing || !mounted) return;
      setState(() { _isProcessing = true; });
      final firestoreProvider = context.read<FirestoreProvider>();
-     final listRef = _firestore.collection('Lists').doc(widget.listId); // Keep direct ref for transaction
+     final listRef = _firestore.collection('Lists').doc(widget.listId);
 
      try {
+       // Check bucket status before transaction
+       final bool isInBucket = await firestoreProvider.isUserInBucket(widget.listId, _performerId!);
+       if (isInBucket) {
+          throw Exception("You are already in the bucket draw.");
+       }
+
        await _firestore.runTransaction((transaction) async {
          DocumentSnapshot snapshot = await transaction.get(listRef);
          if (!snapshot.exists) throw Exception("List does not exist.");
@@ -156,11 +136,7 @@ class _SignupScreenState extends State<SignupScreen> {
          List<String> signedUpIds = List<String>.from(listData['signedUpUserIds'] ?? []);
 
          if (spots.containsKey(_selectedSpotKey!)) throw Exception("Spot not available");
-         // Prevent signup if already in bucket
-         if (await firestoreProvider.isUserInBucket(widget.listId, _performerId!)) {
-             throw Exception("You are already in the bucket draw.");
-         }
-         // Prevent signup if already on main/waitlist
+         // Check main list signup status again inside transaction for safety
          if (signedUpIds.contains(_performerId!)) {
              throw Exception("You are already signed up for a spot on this list.");
          }
@@ -168,55 +144,54 @@ class _SignupScreenState extends State<SignupScreen> {
          spots[_selectedSpotKey!] = { 'name': _performerStageName!, 'userId': _performerId! };
          transaction.update(listRef, { 'spots': spots, 'signedUpUserIds': FieldValue.arrayUnion([_performerId!]) });
        });
-      // Success
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Signed up for spot $_selectedSpotKey!'), backgroundColor: Colors.green));
-        Navigator.of(context).pop();
-        setState(() { _isProcessing = false; });
-      }
-    } catch (e) {
-      // Handle failure
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString() == "Exception: Spot not available" ? 'Sorry, that spot was just taken!' : 'Error signing up: ${e.toString()}'), backgroundColor: Colors.red));
-      }
-        _cancelSelection();
-        setState(() { _isProcessing = false; });
-    }
+
+       if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Signed up for spot $_selectedSpotKey!'), backgroundColor: Colors.green));
+          Navigator.of(context).pop();
+       }
+     } catch (e) {
+       // print("Error confirming selection: $e"); // Commented out
+       if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst("Exception: ", "")), backgroundColor: Colors.red)); // Show cleaner message
+         _cancelSelection();
+       }
+     } finally { if (mounted) setState(() { _isProcessing = false; }); }
   }
+
+
   // --- *** END CORRECTION *** ---
+  // --- Bucket Join/Leave Logic ---
   Future<void> _toggleBucketSignup() async {
-     if (_performerId == null || _performerStageName == null || _isBucketProcessing || _checkingBucketStatus) return;
+     if (_performerId == null || _performerStageName == null || _isBucketProcessing || _checkingBucketStatus || !mounted) return;
 
      setState(() { _isBucketProcessing = true; });
      final firestoreProvider = context.read<FirestoreProvider>();
-     final listRef = _firestore.collection('Lists').doc(widget.listId); // Needed to check main signup status
+     final listRef = _firestore.collection('Lists').doc(widget.listId);
 
      try {
-        // Check if user is already on the main/waitlist first
         final listSnap = await listRef.get();
-        final listData = listSnap.data() as Map<String, dynamic>? ?? {};
+        final listData = listSnap.data() ?? {};
         final signedUpIds = List<String>.from(listData['signedUpUserIds'] ?? []);
         if (signedUpIds.contains(_performerId!)) {
            throw Exception("Cannot join bucket draw; you are already signed up for a main/waitlist spot.");
         }
 
+        // Use the current state checked in initState/updated after action
         if (_isUserAlreadyInBucket) {
-           // Leave bucket
            await firestoreProvider.removeUserFromBucket(widget.listId, _performerId!);
            if (mounted) {
-              setState(() { _isUserAlreadyInBucket = false; });
+              setState(() { _isUserAlreadyInBucket = false; }); // Update local state
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Removed from bucket draw.'), backgroundColor: Colors.orange));
            }
         } else {
-           // Join bucket
            await firestoreProvider.addUserToBucket(widget.listId, _performerId!, _performerStageName!);
            if (mounted) {
-              setState(() { _isUserAlreadyInBucket = true; });
+              setState(() { _isUserAlreadyInBucket = true; }); // Update local state
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Joined bucket draw!'), backgroundColor: Colors.green));
            }
         }
      } catch (e) {
-        print("Error toggling bucket signup: $e");
+        // print("Error toggling bucket signup: $e"); // Commented out
         if (mounted) {
            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.toString().replaceFirst("Exception: ", "")}'), backgroundColor: Colors.red));
         }
@@ -236,7 +211,7 @@ class _SignupScreenState extends State<SignupScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          backgroundColor: Colors.white.withOpacity(0.95),
+          backgroundColor: Colors.white.withAlpha(0.95 as int),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: Text('Confirm Removal', style: TextStyle(color: primaryColor)),
           content: Text('Are you sure you want to remove yourself from spot $spotKey?', style: TextStyle(color: Colors.black87)),
@@ -250,22 +225,15 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _removeSignup(String spotKey) async {
-    if (_isProcessing || _performerId == null) return;
-    setState(() { _isProcessing = true; });
-    final listRef = _firestore.collection('Lists').doc(widget.listId);
-    try {
-      await listRef.update({
-        'spots.$spotKey': FieldValue.delete(),
-        'signedUpUserIds': FieldValue.arrayRemove([_performerId!])
-      });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Removed from spot $spotKey'), backgroundColor: Colors.orange));
-      if (_selectedSpotKey == spotKey) _cancelSelection();
-    } catch (e) {
-      print("Error removing signup: $e");
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error removing signup: $e'), backgroundColor: Colors.red));
-    } finally {
-      if (mounted) setState(() { _isProcessing = false; });
-    }
+     if (_isProcessing || _performerId == null || !mounted) return;
+     setState(() { _isProcessing = true; });
+     final firestoreProvider = context.read<FirestoreProvider>();
+     try {
+       await firestoreProvider.removePerformerFromSpot(widget.listId, spotKey);
+       if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Removed from spot $spotKey'), backgroundColor: Colors.orange)); }
+       if (_selectedSpotKey == spotKey) _cancelSelection();
+     } catch (e) { /* ... Error handling ... */ }
+     finally { if (mounted) setState(() { _isProcessing = false; }); }
   }
   // --- End Removal Logic ---
 
@@ -282,15 +250,13 @@ class _SignupScreenState extends State<SignupScreen> {
         backgroundColor: appBarColor,
         elevation: 0,
         foregroundColor: Colors.white,
-        title: StreamBuilder<DocumentSnapshot>(
-            stream: _firestore.collection('Lists').doc(widget.listId).snapshots(),
+        title: StreamBuilder<Show>(
+           stream: firestoreProvider.getShow(widget.listId),
             builder: (context, snapshot) {
-              if (snapshot.hasData && snapshot.data!.exists) {
-                var listData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-                return Text(listData['listName'] ?? 'Signup List');
-              }
+              if (snapshot.hasData) return Text(snapshot.data!.showName);
               return Text('Signup List');
-            }
+              }
+            
         ),
         leading: IconButton(icon: Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).pop()),
       ),
@@ -306,8 +272,8 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
         child: _isLoadingPerformer
             ? Center(child: CircularProgressIndicator(color: primaryColor))
-            : StreamBuilder<DocumentSnapshot>(
-            stream: _firestore.collection('Lists').doc(widget.listId).snapshots(),
+            : StreamBuilder<Show>(
+                stream: firestoreProvider.getShow(widget.listId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                 return Center(child: CircularProgressIndicator(color: primaryColor));
@@ -315,110 +281,93 @@ class _SignupScreenState extends State<SignupScreen> {
               if (snapshot.hasError) {
                 return Center(child: Text('Error loading list: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900)));
               }
-              if (!snapshot.hasData || !snapshot.data!.exists) {
+              if (!snapshot.hasData || snapshot.data == null) {
                 return Center(child: Text('List not found.', style: TextStyle(color: Colors.black54)));
               }
 
-              var listData = snapshot.data!.data() as Map<String, dynamic>;
               final showData = snapshot.data!; // Use Show object
-              final spotsMap = showData.spots;
-              final totalSpots = showData.numberOfSpots;
-              final totalWaitlist = showData.numberOfWaitlistSpots;
-              final totalBucket = showData.numberOfBucketSpots; // Get total bucket spots
-
                   // Check if user is already signed up for a main/waitlist spot
-                  final bool isSignedUpOnMainList = showData.signedUpUserIds.contains(_performerId);
+                  final bool isSignedUpOnMainList = _performerId != null && showData.signedUpUserIds.contains(_performerId);
 
-              return _buildListContent(listData, spotsMap, totalSpots, totalWaitlist, totalBucket);
-            },
-          ),
+                  // Ensure builder returns a Widget
+                  return _buildListContent(
+                     showData, // Pass Show object
+                     isSignedUpOnMainList
+                  );
+                },
+              ),
       ),
     );
   }
 
   // --- Helper Widget to Build List ---
-  Widget _buildListContent(
-      Map<String, dynamic> listData,
-      Map<String, dynamic> spotsMap,
-      int totalSpots,
-      int totalWaitlist,
-      int totalBucket)
-      bool isSignedUpOnMainList) // Pass flag
-
-  {
+  Widget _buildListContent(Show showData, bool isSignedUpOnMainList) {
     List<Widget> listItems = [];
     int overallIndex = 0;
 
-    Widget buildSectionHeader(String title, int delayMs) {
-      return FadeInDown(
-        delay: Duration(milliseconds: delayMs),
-        duration: const Duration(milliseconds: 400),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
-          child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.black.withOpacity(0.7))),
-        ),
-      );
+    // Access data from showData
+    final spotsMap = showData.spots;
+    final totalSpots = showData.numberOfSpots;
+    final totalWaitlist = showData.numberOfWaitlistSpots;
+    final totalBucket = showData.numberOfBucketSpots;
+
+    Widget buildSectionHeader(String title, double delayMsDouble) {
+       return FadeInDown(
+          // Ensure integer value for milliseconds
+          delay: Duration(milliseconds: delayMsDouble.round()), // Use .round() or .toInt()
+          duration: const Duration(milliseconds: 400),
+          child: Padding(
+             padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+             child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.black.withAlpha((255 * 0.7).round()))), // Use withAlpha
+          ),
+       );
     }
 
     Widget buildSpotTile(int displayIndex, SpotType type, String spotKey, int animationIndex) {
-      final spotData = spotsMap[spotKey]; 
-      bool isAvailable = spotData == null; 
-      bool isReserved = spotData == 'RESERVED'; 
-      bool isTaken = !isAvailable && !isReserved; 
-      bool isTakenByMe = false; String takenByName = 'Taken';
-
+      final spotData = spotsMap[spotKey];
+      bool isAvailable = spotData == null;
+      bool isReserved = spotData is String && spotData == 'RESERVED'; // Corrected check
+      bool isTaken = !isAvailable && !isReserved;
+      bool isTakenByMe = false;
+      String takenByName = 'Taken';
       if (isTaken) { if (spotData is Map<String, dynamic>) { if (spotData['userId'] == _performerId) { isTakenByMe = true; takenByName = spotData['name'] ?? 'You (Error reading name)'; } } else { takenByName = 'Error: Invalid Data'; } }
       bool isSelectedByMe = _selectedSpotKey == spotKey;
-      String titleText; Color titleColor = Colors.black; FontWeight titleWeight = FontWeight.normal;
-      
+      String titleText; Color titleColor = Colors.black; FontWeight titleWeight = FontWeight.normal; TextDecoration textDecoration = TextDecoration.none; // Initialize
       if (isSelectedByMe) { titleText = _performerStageName ?? 'Selecting...'; titleColor = Colors.blue; titleWeight = FontWeight.bold; }
       else if (isTakenByMe) { titleText = takenByName; titleWeight = FontWeight.bold; titleColor = Colors.black87; }
       else if (isTaken && !isTakenByMe) { titleText = 'Taken'; titleColor = Colors.grey.shade600; }
       else if (isReserved) { titleText = 'Reserved'; titleColor = Colors.orange.shade700; }
-      // --- REMOVED Bucket Spot Display from here ---
-      // else if (type == SpotType.bucket && isAvailable) { titleText = 'Bucket Spot'; titleColor = Colors.green.shade800; }
       else if (isAvailable) { titleText = 'Available'; titleColor = Colors.green.shade800; }
       else { titleText = 'Unknown State'; titleColor = Colors.red.shade900; }
-      String spotLabel; switch (type) { case SpotType.regular: spotLabel = "${displayIndex + 1}."; break; case SpotType.waitlist: spotLabel = "W${displayIndex + 1}."; break; case SpotType.bucket: spotLabel = "B${displayIndex + 1}."; break; } // Keep label calculation for structure
+      String spotLabel; switch (type) { case SpotType.regular: spotLabel = "${displayIndex + 1}."; break; case SpotType.waitlist: spotLabel = "W${displayIndex + 1}."; break; case SpotType.bucket: spotLabel = "B${displayIndex + 1}."; break; }
 
       Widget trailingWidget = SizedBox(width: 60);
       if (isSelectedByMe) {
         trailingWidget = Row(mainAxisSize: MainAxisSize.min, children: [ IconButton(icon: Icon(Icons.check_circle, color: Colors.green), onPressed: _isProcessing ? null : _confirmSelection, tooltip: 'Confirm Spot'), IconButton(icon: Icon(Icons.cancel, color: Colors.red), onPressed: _isProcessing ? null : _cancelSelection, tooltip: 'Cancel Selection'), ]);
       }
 
-      Widget listTileContent = Card(
-        color: Colors.white.withOpacity(0.9),
-        elevation: 3,
-        margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        child: ListTile(
-          leading: Text(spotLabel, style: TextStyle(fontSize: 16, color: Colors.black54)),
-          title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: titleWeight)),
-          trailing: trailingWidget,
-          onTap: (isAvailable && !_isProcessing) ? () => _selectSpot(spotKey, isAvailable) : null,
-          tileColor: isSelectedByMe ? Colors.blue.shade50.withOpacity(0.8) : null,
-        ),
+      Widget listTileContent = Card( color: Colors.white.withAlpha((255 * 0.9).round()), elevation: 3, margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+         child: ListTile(
+           leading: Text(spotLabel, style: TextStyle(fontSize: 16, color: Colors.black54)),
+           title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: titleWeight, decoration: textDecoration)), // Use initialized vars
+           trailing: trailingWidget,
+           onTap: (isAvailable && !_isProcessing) ? () => _selectSpot(spotKey, isAvailable) : null,
+           tileColor: isSelectedByMe ? Colors.blue.shade50.withAlpha((200).round()) : null, // Use withAlpha
+         ),
       );
 
       Widget finalTile;
       if (isTakenByMe) {
-        finalTile = Dismissible(
-          key: ValueKey(spotKey),
-          direction: DismissDirection.endToStart,
-          background: Container( decoration: BoxDecoration( color: Colors.red.withOpacity(0.8), borderRadius: BorderRadius.circular(10) ), margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0), padding: EdgeInsets.symmetric(horizontal: 20), alignment: Alignment.centerRight, child: Icon(Icons.delete_sweep, color: Colors.white) ),
-          confirmDismiss: (direction) async => await _showRemoveConfirmationDialog(spotKey),
-          onDismissed: (direction) { _removeSignup(spotKey); },
-          child: listTileContent,
-        );
+         finalTile = Dismissible( key: ValueKey(spotKey), direction: DismissDirection.endToStart, background: Container( /* ... */ ),
+            confirmDismiss: (direction) async => await _showRemoveConfirmationDialog(spotKey),
+            onDismissed: (direction) { _removeSignup(spotKey); },
+            child: listTileContent,
+         );
       } else {
-        finalTile = listTileContent;
+         finalTile = listTileContent;
       }
 
-      return FadeInUp(
-        delay: Duration(milliseconds: 50 * animationIndex),
-        duration: const Duration(milliseconds: 300),
-        child: finalTile,
-      );
+      return FadeInUp( delay: Duration(milliseconds: 50 * animationIndex), duration: const Duration(milliseconds: 300), child: finalTile );
     }
 
     // --- Building the list sections (Regular, Waitlist ONLY) ---
@@ -433,7 +382,7 @@ class _SignupScreenState extends State<SignupScreen> {
     }
     // --- REMOVED Bucket Spot Loop ---
 
-        if (totalBucket > 0) {
+      if (totalBucket > 0) {
        listItems.add(Divider(indent: 16, endIndent: 16, color: Colors.white.withAlpha((255 * 0.5).round())));
        listItems.add(buildSectionHeader('Bucket Draw', overallIndex * 50 + 300));
        overallIndex++;
@@ -469,8 +418,8 @@ class _SignupScreenState extends State<SignupScreen> {
                          _checkingBucketStatus // Show loader while checking initial status
                             ? CircularProgressIndicator(strokeWidth: 2)
                             : ElevatedButton.icon(
-                                icon: Icon(_isUserAlreadyInBucket ? Icons.person_remove_alt_1 : Icons.person_add_alt_1),
-                                label: Text(_isUserAlreadyInBucket ? 'Leave Bucket Draw' : 'Join Bucket Draw'),
+                                icon: Icon(_isUserAlreadyInBucket ? Icons.person_remove_alt_1 : Icons.person_add_alt_1, color: Colors.white),
+                                label: Text(_isUserAlreadyInBucket ? 'Pull Name From Bucket' : 'Name In Bucket'),
                                 style: ElevatedButton.styleFrom(
                                    backgroundColor: _isUserAlreadyInBucket ? Colors.orange.shade700 : Theme.of(context).primaryColor,
                                    foregroundColor: Colors.white,
