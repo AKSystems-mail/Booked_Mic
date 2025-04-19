@@ -6,14 +6,21 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:animate_do/animate_do.dart';
-import 'package:qr_flutter/qr_flutter.dart'; // Re-add for QrImageView and QrPainter
+import 'package:qr_flutter/qr_flutter.dart'; // Keep for QrImageView and QrPainter
+import 'package:intl/intl.dart'; // Keep for DateFormat
+import 'dart:io'; // Keep for File and Platform
+import 'dart:typed_data'; // Keep for Uint8List
+import 'package:screenshot/screenshot.dart'; // Keep for screenshot
+import 'package:path_provider/path_provider.dart'; // Keep for temp directory
+import 'package:flutter_image_gallery_saver/flutter_image_gallery_saver.dart'; // Keep for saving
+import 'package:flutter/services.dart'; // Keep for PlatformException
 
 // Import necessary screens
 import 'list_setup_screen.dart';
 import '../role_selection_screen.dart';
 import 'show_list_screen.dart';
 import 'edit_list_screen.dart';
-import 'package:myapp/providers/firestore_provider.dart'; // Import FirestoreProvider
+import 'package:myapp/providers/firestore_provider.dart';
 
 // --- Delete Confirmation Dialog Helper ---
 Future<void> _showDeleteConfirmationDialog(
@@ -83,6 +90,95 @@ class CreatedListsScreen extends StatelessWidget {
     );
   }
 
+// --- RESTORED _downloadQRCode function ---
+Future<void> _downloadQRCode(BuildContext context, String qrCodeData,
+    String listName, DateTime date) async {
+  if (!context.mounted) return;
+
+  ScreenshotController screenshotController = ScreenshotController();
+  final theme = Theme.of(context);
+  final dateString = DateFormat('EEE, MMM d, yyyy').format(date);
+
+  // Define the widget to capture
+  final Widget qrWidgetToCapture = Material(
+    color: Colors.white,
+    child: Padding(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min, // Important to size correctly
+        children: [
+          Text(listName, textAlign: TextAlign.center, style: theme.textTheme.titleLarge?.copyWith(color: Colors.black, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text(dateString, textAlign: TextAlign.center, style: theme.textTheme.titleMedium?.copyWith(color: Colors.grey[700])),
+          const SizedBox(height: 15),
+          SizedBox(
+            width: 250, height: 250,
+            child: QrImageView(
+              data: qrCodeData,
+              version: QrVersions.auto,
+              size: 250.0,
+              gapless: false,
+              // Ensure error correction level allows for potential logo overlay later if needed
+              errorCorrectionLevel: QrErrorCorrectLevel.M,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  try {
+    // Capture the widget as image bytes
+    final Uint8List? imageBytes = await screenshotController.captureFromWidget(
+       qrWidgetToCapture,
+       context: context, // Use the original context
+       delay: const Duration(milliseconds: 100),
+    );
+
+    if (imageBytes == null) {
+      throw Exception('Failed to capture QR code widget.');
+    }
+
+    // Save Bytes to Temporary File
+    final directory = await getTemporaryDirectory();
+    final safeListName = listName.replaceAll(RegExp(r'[^\w\s]+'), '').replaceAll(' ', '_');
+    final imagePath = '${directory.path}/qr_${safeListName}_${DateFormat('yyyyMMdd').format(date)}.png';
+    final file = File(imagePath);
+    await file.writeAsBytes(imageBytes);
+
+    // Save to Gallery using platform check
+    bool success = false;
+    String errorMessage = 'Failed to save to gallery.';
+    try {
+      final dynamic result = await FlutterImageGallerySaver.saveFile(file.path);
+      if (Platform.isAndroid) {
+        if (result is Map && result['isSuccess'] == true) success = true;
+        else if (result is Map) errorMessage = result['errorMessage'] ?? 'Unknown Android error';
+      } else if (Platform.isIOS) {
+        if (result is bool) success = result;
+      }
+    } on PlatformException catch (e) {
+      errorMessage = e.message ?? 'Platform error saving file.';
+    } catch (e) {
+      errorMessage = e.toString();
+    }
+
+    // Show Feedback
+    if (!context.mounted) return;
+    if (success) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR code with details saved to gallery.')));
+    } else {
+       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.orange));
+    }
+
+  } catch (e) {
+    // print("Error downloading QR code: $e"); // Commented out
+    if(context.mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to download QR code: $e')));
+    }
+  }
+}
+// --- END RESTORED _downloadQRCode ---
   // --- MODIFIED Options Dialog ---
   Future<void> _showOptionsDialog(
       BuildContext context, String listId, String listName) async {
@@ -105,7 +201,7 @@ class CreatedListsScreen extends StatelessWidget {
                     color: primaryColor, fontWeight: FontWeight.bold)),
             content: Text('What would you like to do with this list?',
                 style: TextStyle(color: Colors.black87)),
-            actionsAlignment: MainAxisAlignment.center,
+            actionsAlignment: MainAxisAlignment.spaceEvenly,
             actions: <Widget>[
               TextButton.icon(
                   icon: Icon(Icons.edit_outlined, color: appBarColor),
@@ -129,6 +225,17 @@ class CreatedListsScreen extends StatelessWidget {
                             builder: (context) =>
                                 ShowListScreen(listId: listId)));
                   }),
+          // --- *** RESTORED DOWNLOAD BUTTON *** ---
+          if (qrCodeData != null && date != null) // Check data exists
+            TextButton.icon(
+              icon: Icon(Icons.download_outlined, color: appBarColor), // Download third
+              label: Text('Download QR', style: TextStyle(color: appBarColor)), // Shortened label
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                await _downloadQRCode(context, qrCodeData, listName, date.toDate());
+              },
+            ),
+          // --- *** END RESTORED BUTTON *** ---              
               // --- Added Delete Button ---
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
@@ -155,6 +262,8 @@ class CreatedListsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color appBarColor = Colors.blue.shade400;
     final Color buttonColor = Colors.blue.shade600; // Button color
+    final firestoreProvider = context.read<FirestoreProvider>();
+
 
     if (currentUserId == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -236,31 +345,17 @@ class CreatedListsScreen extends StatelessWidget {
                 final doc = snapshot.data!.docs[index];
                 final listData = doc.data() as Map<String, dynamic>? ?? {};
                 final String docId = doc.id;
-                // Removed qrCodeData/date variables as they aren't used in this version's dialog call
                 final String listName = listData['listName'] ?? 'Unnamed List';
-
+                final Timestamp? date = listData['date'] as Timestamp?;
                 final String qrCodeData = docId; // Assuming you want to encode the list ID in the QR code
-
                 final spotsMap =
                     listData['spots'] as Map<String, dynamic>? ?? {};
                 int filledRegular = 0;
                 int filledWaitlist = 0;
-                int filledBucket = 0;
-                spotsMap.forEach((key, value) {
-                  if (value is Map) {
-                    if (key.startsWith('W')) {
-                      filledWaitlist++;
-                    } else if (key.startsWith('B')) {
-                      filledBucket++;
-                    } else if (int.tryParse(key) != null) {
-                      filledRegular++;
-                    }
-                  }
-                });
+                spotsMap.forEach((key, value) { if (value is Map) { if (key.startsWith('W')) { filledWaitlist++; } else if (int.tryParse(key) != null) { filledRegular++; } } });
                 final int totalRegular = listData['numberOfSpots'] ?? 0;
-                final int totalWaitlist =
-                    listData['numberOfWaitlistSpots'] ?? 0;
-                final int totalBucket = listData['numberOfBucketSpots'] ?? 0;
+                final int totalWaitlist = listData['numberOfWaitlistSpots'] ?? 0;
+                final int totalBucketSpots = listData['numberOfBucketSpots'] ?? 0; // Total B spots available
 
                 return FadeInUp(
                   delay: Duration(milliseconds: 100 * index),
@@ -319,42 +414,35 @@ class CreatedListsScreen extends StatelessWidget {
 
                             Spacer(), // Push counts to the bottom
 
-                            // Bottom Section: Counts
-                            Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (totalRegular > 0)
-                                    Padding(
-                                        padding:
-                                            const EdgeInsets.only(top: 2.0),
-                                        child: Text(
-                                            'Regular: $filledRegular/$totalRegular',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                                fontSize: 12))), // Smaller font
-                                  if (totalWaitlist > 0)
-                                    Padding(
-                                        padding:
-                                            const EdgeInsets.only(top: 2.0),
-                                        child: Text(
-                                            'Waitlist: $filledWaitlist/$totalWaitlist',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                                fontSize: 12))),
-                                  if (totalBucket > 0)
-                                    Padding(
-                                        padding:
-                                            const EdgeInsets.only(top: 2.0),
-                                        child: Text(
-                                            'Bucket: $filledBucket/$totalBucket',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                                fontSize: 12)))
-                                ]),
-                          ],
-                        ),
-                      ),
-                    ),
+                                 // Bottom Section: Counts
+                                Column(
+                                   crossAxisAlignment: CrossAxisAlignment.start,
+                                   children: [
+                                      if (totalRegular > 0) Padding(padding: const EdgeInsets.only(top: 2.0), child: Text('Regular: $filledRegular/$totalRegular', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12))),
+                                      if (totalWaitlist > 0) Padding(padding: const EdgeInsets.only(top: 2.0), child: Text('Waitlist: $filledWaitlist/$totalWaitlist', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12))),
+                                      // Bucket Signup Count
+                                      if (totalBucketSpots > 0)
+                                         FutureBuilder<int>(
+                                            future: firestoreProvider.getBucketSignupCount(docId),
+                                            builder: (context, countSnapshot) {
+                                               int bucketCount = countSnapshot.data ?? 0;
+                                               // Display count or loading/error indicator
+                                               Widget bucketText = Text('Bucket Signups: $bucketCount', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12));
+                                               if (countSnapshot.connectionState == ConnectionState.waiting) {
+                                                  bucketText = Text('Bucket Signups: ...', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12, fontStyle: FontStyle.italic));
+                                               } else if (countSnapshot.hasError) {
+                                                  bucketText = Text('Bucket Signups: Err', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12, color: Colors.red.shade300));
+                                               }
+                                               return Padding(padding: const EdgeInsets.only(top: 2.0), child: bucketText);
+                                            },
+                                         ),
+                                   ]
+                                ),
+                              ],
+                            ),
+                          ),
+                       ),
+                     ),
                   ),
                 );
               },
@@ -365,14 +453,10 @@ class CreatedListsScreen extends StatelessWidget {
       floatingActionButton: FadeInUp(
         delay: Duration(milliseconds: 500),
         child: FloatingActionButton(
-          onPressed: () => Navigator.push(context,
-              MaterialPageRoute(builder: (context) => ListSetupScreen())),
-          backgroundColor: appBarColor,
-          foregroundColor: Colors.white,
-          tooltip: 'Create New List',
-          child: Icon(Icons.add),
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => ListSetupScreen())),
+          backgroundColor: appBarColor, foregroundColor: Colors.white,
+          tooltip: 'Create New List', child: Icon(Icons.add),
         ),
       ),
     );
   }
-}

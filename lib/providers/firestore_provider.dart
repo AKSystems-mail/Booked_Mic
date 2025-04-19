@@ -73,5 +73,9 @@ class FirestoreProvider extends ChangeNotifier {
      await _firestoreService.removeUserFromBucket(listId, userId);
      // No notifyListeners needed, count stream will update UI
   }
+ 
+   Future<int> getBucketSignupCount(String listId) async {
+     return await _firestoreService.getBucketSignupCount(listId);
+  }
   // --- Remove City/Performer methods if unused ---
 }

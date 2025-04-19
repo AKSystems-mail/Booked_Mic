@@ -183,6 +183,22 @@ class FirestoreService {
      } catch (e) { print("Error removing user from bucket: $e"); rethrow; }
   }
   // In FirestoreService class
+  // --- ADD Method to get bucket count ---
+  Future<int> getBucketSignupCount(String listId) async {
+    try {
+      final snapshot = await _db
+          .collection(_listCollection)
+          .doc(listId)
+          .collection('bucketSignups')
+          .count() // Use Firestore aggregate count
+          .get();
+      return snapshot.count ?? 0;
+    } catch (e) {
+      print("Error getting bucket signup count for list $listId: $e");
+      return 0; // Return 0 on error
+    }
+  }
+
 
   Future<void> addManualNameToSpot(
       String listId, String spotKey, String name) async {
