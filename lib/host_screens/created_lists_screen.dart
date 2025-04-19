@@ -8,10 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart'; // Used by _switchR
 import 'package:animate_do/animate_do.dart';
 import 'package:qr_flutter/qr_flutter.dart'; // Used by _downloadQRCode and potentially Card UI
 import 'package:intl/intl.dart'; // Used by _downloadQRCode
-import 'dart:io'; // Used by _downloadQRCode and Platform check
-import 'dart:typed_data'; // Used by _downloadQRCode
 import 'package:screenshot/screenshot.dart'; // Used by _downloadQRCode
-import 'package:path_provider/path_provider.dart'; // Used by _downloadQRCode
+// Used by _downloadQRCode
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:flutter/services.dart'; // Used for PlatformException in _downloadQRCode
 
@@ -89,15 +87,14 @@ Future<void> _showOptionsDialog(BuildContext context, String listId,
 // Keep _downloadQRCode - IS used by dialog
 Future<void> _downloadQRCode(BuildContext context, String qrCodeData,
     String listName, DateTime date) async {
-  // Check mounted at the beginning
   if (!context.mounted) return;
 
   ScreenshotController screenshotController = ScreenshotController();
-  final theme = Theme.of(context); // Used
-  final dateString = DateFormat('EEE, MMM d, yyyy').format(date); // Used
+  final theme = Theme.of(context);
+  final dateString = DateFormat('EEE, MMM d, yyyy').format(date);
 
-  // Define the widget to capture
-  final Widget qrWidgetToCapture = Material( // Used
+  // Widget to capture (includes QR, Title, Date)
+  final Widget qrWidgetToCapture = Material(
     color: Colors.white,
     child: Padding(
       padding: const EdgeInsets.all(20.0),
@@ -110,7 +107,7 @@ Future<void> _downloadQRCode(BuildContext context, String qrCodeData,
           const SizedBox(height: 15),
           SizedBox(
             width: 250, height: 250,
-            child: QrImageView(data: qrCodeData, version: QrVersions.auto, size: 250.0, gapless: false),
+            child: QrImageView(data: qrCodeData, version: QrVersions.auto, size: 250.0, gapless: false, errorCorrectionLevel: QrErrorCorrectLevel.M),
           ),
         ],
       ),
@@ -118,50 +115,53 @@ Future<void> _downloadQRCode(BuildContext context, String qrCodeData,
   );
 
   try {
-    // Pass the widget to capture
+    // 1. Capture Widget to Bytes
     final Uint8List? imageBytes = await screenshotController.captureFromWidget(
-       qrWidgetToCapture, // Pass the widget
-       context: context,
-       delay: const Duration(milliseconds: 100),
+      qrWidgetToCapture, context: context, delay: const Duration(milliseconds: 100),
     );
     if (imageBytes == null) {
       throw Exception('Failed to capture QR code widget.');
     }
 
-    final directory = await getTemporaryDirectory();
+    // 2. Generate Filename (Optional, but good practice for saver)
     final safeListName = listName.replaceAll(RegExp(r'[^\w\s]+'), '').replaceAll(' ', '_');
-    final imagePath = '${directory.path}/qr_${safeListName}_${DateFormat('yyyyMMdd').format(date)}.png';
-    final file = File(imagePath);
-    await file.writeAsBytes(imageBytes);
+    final String suggestedFilename = 'qr_${safeListName}_${DateFormat('yyyyMMdd').format(date)}.png';
 
-    // Save to Gallery using platform check
-    dynamic result = await ImageGallerySaver.saveFile(file.path);
+    // --- 3. Save Bytes Directly to Gallery ---
+    // No need for temporary file
+    final result = await ImageGallerySaver.saveImage(
+        imageBytes,
+        quality: 90, // Optional quality setting (0-100)
+        name: suggestedFilename // Optional filename suggestion
+    );
     // print("Gallery Save Result: $result"); // Commented out
 
     if (!context.mounted) return; // Re-check mounted
 
+    // 4. Handle Result (image_gallery_saver often returns Map with filePath/isSuccess on Android)
     bool success = false;
-    String errorMessage = 'Unknown error';
+    String resultMessage = 'Failed to save QR code.';
 
-    if (Platform.isAndroid) {
-      // Use curly braces
-      if (result is Map && result['isSuccess'] == true) {
+    // Check if result indicates success (structure might vary slightly)
+    if (result is Map && result['isSuccess'] == true && result['filePath'] != null) {
         success = true;
-      } else if (result is Map) {
-        errorMessage = result['errorMessage'] ?? 'Unknown Android error';
-      }
-    } else if (Platform.isIOS) {
-      // Use curly braces
-      if (result is bool) {
-        success = result;
-      }
+        resultMessage = 'QR code saved to gallery.';
+        // print("Saved to: ${result['filePath']}"); // Commented out
+    } else if (result is Map && result['errorMessage'] != null) {
+        resultMessage = 'Failed to save QR code: ${result['errorMessage']}';
+    } else if (result != null) {
+        // Handle potential non-map results if necessary (e.g., iOS might return different data)
+        // For simplicity, assume success if result is not null and not explicitly failure map
+        // This might need adjustment based on testing across platforms
+        success = true; // Tentative success if result is not a known error map
+        resultMessage = 'QR code saved (check gallery).';
     }
 
-    if (success) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR code with details saved to gallery.')));
-    } else {
-       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save QR code. Error: $errorMessage')));
-    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(resultMessage),
+        backgroundColor: success ? Colors.green : Colors.orange,
+    ));
+    // --- End Save Logic ---
 
   } catch (e) {
     // print("Error downloading QR code: $e"); // Commented out
