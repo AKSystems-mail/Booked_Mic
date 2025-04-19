@@ -384,7 +384,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
       if (totalBucket > 0) {
        listItems.add(Divider(indent: 16, endIndent: 16, color: Colors.white.withAlpha((255 * 0.5).round())));
-       listItems.add(buildSectionHeader('Bucket Draw', overallIndex * 50 + 300));
+       listItems.add(buildSectionHeader('Bucket List', overallIndex * 50 + 300));
        overallIndex++;
        listItems.add(
           FadeInUp(
@@ -399,7 +399,7 @@ class _SignupScreenState extends State<SignupScreen> {
                    padding: const EdgeInsets.all(16.0),
                    child: Column(
                       children: [
-                         // StreamBuilder for the count
+                         // --- MODIFIED TEXT DISPLAY ---
                          StreamBuilder<int>(
                             stream: context.read<FirestoreProvider>().getBucketSignupCountStream(widget.listId),
                             builder: (context, countSnapshot) {
@@ -407,8 +407,9 @@ class _SignupScreenState extends State<SignupScreen> {
                                if (countSnapshot.connectionState == ConnectionState.waiting && !countSnapshot.hasData) {
                                   return Text("Loading bucket count...", style: TextStyle(color: Colors.grey.shade600));
                                }
+                               // Display only the number of people signed up for the draw
                                return Text(
-                                  "Signups: $currentBucketSignups / $totalBucket Spots Available",
+                                  "Names in Bucket: $currentBucketSignups",
                                   style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
                                );
                             }
