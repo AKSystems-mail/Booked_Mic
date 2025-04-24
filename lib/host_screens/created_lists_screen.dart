@@ -14,7 +14,7 @@ import 'package:qr_flutter/qr_flutter.dart'; // Used by _downloadQRCode and pote
 import 'package:intl/intl.dart'; // Used by _downloadQRCode
 import 'package:screenshot/screenshot.dart'; // Used by _downloadQRCode
 
-import 'package:gallery_saver/gallery_saver.dart';
+import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:flutter/services.dart'; // Used for PlatformException in _downloadQRCode
 
 // Import necessary screens
@@ -27,7 +27,7 @@ import 'package:myapp/providers/firestore_provider.dart'; // Used by dialog acti
 // --- Top Level Helper Functions ---
 
 Future<void> _showOptionsDialog(BuildContext context, String listId,
-    String listName, String qrCodeData, Timestamp? date) async { // Made qrCodeData non-nullable
+    String listName, String qrCodeData, Timestamp date) async { // Made qrCodeData non-nullable
   final Color primaryColor = Theme.of(context).primaryColor;
   final Color appBarColor = Colors.blue.shade400;
 
@@ -62,7 +62,7 @@ Future<void> _showOptionsDialog(BuildContext context, String listId,
             },
           ),
           // Check date is not null before showing download
-          if (date != null)
+          
             TextButton.icon(
               icon: Icon(Icons.download_outlined, color: appBarColor),
               label: Text('Download QR', style: TextStyle(color: appBarColor)),
@@ -94,75 +94,120 @@ Future<void> _downloadQRCode(BuildContext context, String qrCodeData,
   if (!context.mounted) return;
 
   ScreenshotController screenshotController = ScreenshotController();
-  Theme.of(context);
-  DateFormat('EEE, MMM d, yyyy').format(date);
+  // Define styles explicitly
+  const TextStyle titleStyle = TextStyle(fontSize: 22, color: Colors.black, fontWeight: FontWeight.bold, decoration: TextDecoration.none);
+  final TextStyle dateStyle = TextStyle(fontSize: 16, color: Colors.grey[700], decoration: TextDecoration.none);
+  final String dateString = DateFormat('EEE, MMM d, yyyy').format(date);
 
-  // Widget to capture (includes QR, Title, Date)
-  final Widget qrWidgetToCapture = Material( /* ... Widget Definition ... */ );
+  // It's crucial that this widget can be laid out correctly *off-screen*
+    // Using fixed sizes and basic widgets helps.  
+    // Remove unused variable qrWidgetToCapture
+   
 
   try {
-    // 1. Capture Widget to Bytes
-    final Uint8List? imageBytes = await screenshotController.captureFromWidget(
-      qrWidgetToCapture, context: context, delay: const Duration(milliseconds: 100),
+    // --- Attempt 1: Capture specific QrImageView using controller ---
+    // This often works better than capturing a complex widget built on the fly.
+    // We need to slightly adjust how we capture.
+    Material(
+      color: Colors.white,
+      child: Container( // Constrain the size of the container being captured
+        padding: const EdgeInsets.all(20.0),
+        width: 350, // Give it a reasonable fixed width
+        child: Column(
+          mainAxisSize: MainAxisSize.min, // Fit content
+          children: [
+            Text(listName, textAlign: TextAlign.center, style: titleStyle),
+            const SizedBox(height: 8),
+            Text(dateString, textAlign: TextAlign.center, style: dateStyle),
+            const SizedBox(height: 15),
+            Screenshot( // Wrap QrImageView with Screenshot for capture if captureFromWidget fails
+                controller: screenshotController, // Assign controller here
+                child: QrImageView(
+                  data: qrCodeData,
+                  version: QrVersions.auto,
+                  size: 250.0, // Keep QR size fixed
+                  gapless: false,
+                  errorCorrectionLevel: QrErrorCorrectLevel.M,
+                  backgroundColor: Colors.white, // Ensure QR background is white
+                ),
+            ),
+            // Alternative: Capture the whole Material widget if Screenshot wrapper causes issues
+          ],
+        ),
+      ),
     );
-    if (imageBytes == null) throw Exception('Failed to capture QR code widget.');
+    // We will capture the Screenshot widget placed in the tree above.
+    // This requires a slightly different approach - usually by building the
+    // widget temporarily offscreen or using the controller attached to an
+    // already built widget. Let's stick to captureFromWidget first, but simplify.
 
-    // 2. Save Bytes to Temporary File (Still needed for gallery_saver)
+    // --- Attempt 2: Capture simplified widget directly ---
+    final Uint8List? imageBytes = await screenshotController.captureFromWidget(
+      // Capture the Material widget directly
+      Material(
+         color: Colors.white,
+         child: Padding(
+           padding: const EdgeInsets.all(20.0),
+           child: Column(
+             mainAxisSize: MainAxisSize.min,
+             children: [
+               Text(listName, textAlign: TextAlign.center, style: titleStyle),
+               const SizedBox(height: 8),
+               Text(dateString, textAlign: TextAlign.center, style: dateStyle),
+               const SizedBox(height: 15),
+               SizedBox( // Use SizedBox for sizing
+                 width: 250, height: 250,
+                 child: QrImageView(
+                   data: qrCodeData, version: QrVersions.auto, size: 250.0, gapless: false,
+                   errorCorrectionLevel: QrErrorCorrectLevel.M, backgroundColor: Colors.white,
+                 ),
+               ),
+             ],
+           ),
+         ),
+      ),
+      context: context, // Still pass context
+      delay: const Duration(milliseconds: 200), // Increase delay slightly
+    );
+
+    if (imageBytes == null) {
+      throw Exception('Failed to capture QR code widget (imageBytes null).');
+    }
+    if (imageBytes.isEmpty) {
+       throw Exception('Failed to capture QR code widget (imageBytes empty).');
+    }
+
+
+    // --- Save to Gallery (using gallery_saver_plus) ---
     final directory = await getTemporaryDirectory();
     final safeListName = listName.replaceAll(RegExp(r'[^\w\s]+'), '').replaceAll(' ', '_');
-    // Use a unique name to avoid potential caching issues if user downloads multiple times quickly
     final String tempFilename = 'qr_${safeListName}_${DateTime.now().millisecondsSinceEpoch}.png';
     final imagePath = '${directory.path}/$tempFilename';
     final file = File(imagePath);
     await file.writeAsBytes(imageBytes);
-    print("Saved temp file to: ${file.path}"); // Debugging print
+    // print("Saved temp file to: ${file.path}"); // Commented out
 
-    // --- 3. Save Temporary File to Gallery using gallery_saver ---
-    bool? success = false; // gallery_saver returns bool?
+    bool? success = false;
     String errorMessage = 'Failed to save to gallery.';
-
     try {
-      success = await GallerySaver.saveImage(
-          file.path,
-          albumName: "Booked Mic Lists" // Optional: Specify album name
-      );
-      // print("Gallery Save Result: $success"); // Commented out
-      if (success == true) {
-         errorMessage = ''; // Clear default error if successful
-      } else {
-         errorMessage = 'Saving to gallery failed (plugin returned false/null).';
-      }
-    } on PlatformException catch (e) { // Catch specific platform errors
-      errorMessage = e.message ?? 'Platform error saving file.';
-      // print("Gallery Save PlatformException: $e"); // Commented out
-      success = false;
-    } catch (e) { // Catch other potential errors during save
-      errorMessage = e.toString();
-      // print("Gallery Save General Error: $e"); // Commented out
-      success = false;
+      success = await GallerySaver.saveImage(file.path, albumName: 'Booked Mic Lists');
+      if (success == true) { errorMessage = ''; }
+      else { errorMessage = 'Saving to gallery failed (plugin returned false/null).'; }
+    } on PlatformException catch (e) { errorMessage = e.message ?? 'Platform error saving file.'; success = false; }
+    catch (e) { errorMessage = e.toString(); success = false; }
+    finally {
+        // Clean up temporary file
+        try { if (await file.exists()) { await file.delete(); /* print("Deleted temp file"); */ } }
+        catch (e) { /* print("Error deleting temp QR file: $e"); */ }
     }
     // --- End Save Logic ---
 
-    // 4. Show Feedback
-    if (!context.mounted) return; // Re-check mounted
+    // Show Feedback
+    if (!context.mounted) return;
+    if (success == true) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR code with details saved to gallery.'))); }
+    else { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.orange)); }
 
-    if (success == true) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR code with details saved to gallery.')));
-    } else {
-       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.orange));
-    }
-
-    // 5. Clean up temporary file (optional but good practice)
-    try {
-       if (await file.exists()) {
-          await file.delete();
-          print("Deleted temp file: ${file.path}");
-       }
-    } catch (e) {
-       print("Error deleting temp QR file: $e");
-    }
-
-  } catch (e) { // Catch errors from capture or file writing
+  } catch (e) {
     // print("Error downloading QR code: $e"); // Commented out
     if(context.mounted) {
        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to generate/download QR code: $e')));
@@ -276,9 +321,9 @@ class CreatedListsScreen extends StatelessWidget {
                 final doc = snapshot.data!.docs[index];
                 final listData = doc.data() as Map<String, dynamic>? ?? {};
                 final String docId = doc.id;
-                // Define non-nullable qrCodeData
+                
                 final String qrCodeData = docId;
-                final Timestamp? date = listData['date'] as Timestamp?;
+                final Timestamp date = listData['date'] as Timestamp;
                 final String listName = listData['listName'] ?? 'Unnamed List';
 
                 final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
