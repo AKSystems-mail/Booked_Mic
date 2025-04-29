@@ -338,6 +338,7 @@ class _EditListScreenState extends State<EditListScreen> {
                                           color:
                                               labelColor), /* ... borders ... */
                                     ),
+                                    textCapitalization: TextCapitalization.sentences,
                                     validator: (v) =>
                                         (v == null || v.trim().isEmpty)
                                             ? 'Enter name'
