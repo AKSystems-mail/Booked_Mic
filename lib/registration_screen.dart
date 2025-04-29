@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart'; // Keep for mobile
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:animate_do/animate_do.dart';
+
 import 'package:flutter/foundation.dart'
     show kIsWeb; // Keep for platform checks
 
@@ -58,31 +59,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   // Combined Email Sign In / Sign Up Logic
   Future<void> _signInOrSignUpWithEmailAndPassword() async {
-    // Check mounted before accessing context
-    if (!mounted) return;
+    if (!mounted) return; // Check mounted before accessing context
     FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    // --- Validate Form ---
+    // Use null check on currentState before calling validate
+    final form = _formKey.currentState;
+    if (form == null || !form.validate()) {
+       print("Form validation failed."); // Debug log
+       return; // Don't proceed if form is invalid
+    }
+    // --- End Validate ---
+
+    setState(() { _isLoading = true; _errorMessage = null; });
 
     final String email = _emailController.text.trim();
     final String password = _passwordController.text.trim();
-    final String stageName =
-        _stageNameController.text.trim(); // Stage name is required by validator
+    final String stageName = _stageNameController.text.trim(); // Stage name is required by validator
 
     try {
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-      // print("User signed in: ${userCredential.user?.uid}"); // Commented out
       // Sign in successful, check/update stage name if needed (optional)
       if (userCredential.user != null) {
-        // Optionally update stage name even on sign-in if text field has value
-        // await _updateStageNameIfProvided(userCredential.user!.uid, stageName);
       }
 
       if (mounted && userCredential.user != null) {
@@ -93,9 +94,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       if (e.code == 'user-not-found' ||
           e.code == 'invalid-credential' ||
           e.code == 'INVALID_LOGIN_CREDENTIALS') {
-        // Added new code
-        // print("User not found, attempting to create account..."); // Commented out
-        // Pass stage name to creation method (it's already validated as non-empty)
+
         await _createUserWithEmailAndPassword(email, password, stageName);
       } else {
         // Handle other sign-in errors
@@ -120,19 +119,21 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             message =
                 'Login failed. Please try again. (${e.code})'; // Include code for debugging
         }
-        if (mounted)
+        if (mounted) {
           setState(() {
             _errorMessage = message;
             _isLoading = false;
           });
+        }
       }
     } catch (e) {
       // print("General Error during Sign In attempt: $e"); // Commented out
-      if (mounted)
+      if (mounted) {
         setState(() {
           _errorMessage = 'An unexpected error occurred.';
           _isLoading = false;
         });
+      }
     }
     // isLoading state for signup is handled within _createUserWithEmailAndPassword's finally block
   }
@@ -146,7 +147,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         email: email,
         password: password,
       );
-      // print("User created: ${userCredential.user?.uid}"); // Commented out
 
       if (userCredential.user != null) {
         await _firestore.collection('users').doc(userCredential.user!.uid).set({
@@ -155,14 +155,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           'stageName': stageName, // Use validated stage name
           'createdAt': FieldValue.serverTimestamp(),
         });
-        // print("User data saved to Firestore."); // Commented out
       }
 
       if (mounted && userCredential.user != null) {
         _navigateToNextScreen();
       }
     } on FirebaseAuthException catch (e) {
-      // print("Account Creation failed: ${e.code}"); // Commented out
       String message;
       switch (e.code) {
         case 'email-already-in-use':
@@ -180,21 +178,24 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         default:
           message = 'Account creation failed. Please try again. (${e.code})';
       }
-      if (mounted)
+      if (mounted) {
         setState(() {
           _errorMessage = message;
         });
+      }
     } catch (e) {
       // print("General Error during Account Creation: $e"); // Commented out
-      if (mounted)
+      if (mounted) {
         setState(() {
           _errorMessage = 'An unexpected error occurred.';
         });
+      }
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
+      }
     }
   }
 
@@ -285,13 +286,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           _errorMessage = 'An unexpected error occurred during Google Sign-In.';
         });
       }
-      if (googleUser != null)
+      if (googleUser != null) {
         await _googleSignIn
             .signOut(); // Sign out Google if Firebase fails    } finally {
-      if (mounted)
+      }
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
+      }
     }
   }
   // --- End Google Sign In ---
@@ -384,11 +387,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
                         validator: (value) {
-                          if (value == null || value.trim().isEmpty)
+                          if (value == null || value.trim().isEmpty) {
                             return 'Please enter your email';
+                          }
                           if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                              .hasMatch(value.trim()))
+                              .hasMatch(value.trim())) {
                             return 'Please enter a valid email address';
+                          }
                           return null;
                         },
                       ),
@@ -425,10 +430,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         obscureText: true,
                         textInputAction: TextInputAction.next,
                         validator: (value) {
-                          if (value == null || value.isEmpty)
+                          if (value == null || value.isEmpty) {
                             return 'Please enter your password';
-                          if (value.length < 6)
+                          }
+                          if (value.length < 6) {
                             return 'Password must be at least 6 characters';
+                          }
                           return null;
                         },
                       ),
@@ -549,8 +556,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           return null;
                         },
                         onFieldSubmitted: (_) {
-                          if (!_isLoading)
+                          if (!_isLoading) {
                             _signInOrSignUpWithEmailAndPassword();
+                          }
                         },
                       ),
                     ),
