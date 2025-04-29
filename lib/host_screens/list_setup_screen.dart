@@ -242,6 +242,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                             borderSide: BorderSide(
                                 color: Theme.of(context).primaryColor,
                                 width: 1.5))),
+                    textCapitalization: TextCapitalization.sentences,
                     validator: (v) =>
                         (v == null || v.trim().isEmpty) ? 'Enter name' : null)),
             const SizedBox(height: 16),
