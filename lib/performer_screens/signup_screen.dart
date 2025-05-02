@@ -296,7 +296,7 @@ class _SignupScreenState extends State<SignupScreen> {
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
-            backgroundColor: Colors.white.withAlpha(0.95 as int),
+           backgroundColor: Colors.white.withAlpha((255 * 0.95).round()),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             title:
@@ -381,129 +381,82 @@ class _SignupScreenState extends State<SignupScreen> {
           );
         }
 
-        Widget buildSpotTile(int displayIndex, SpotType type, String spotKey,
-            int animationIndex) {
-          final spotData = spotsMap[spotKey];
-          bool isAvailable = spotData == null;
-          bool isReserved = spotData is String && spotData == 'RESERVED';
-          bool isTaken = !isAvailable && !isReserved;
-          bool isTakenByMe = false;
-          String takenByName = 'Taken';
-          if (isTaken) {
-            if (spotData is Map<String, dynamic>) {
-              if (spotData['userId'] == _performerId) {
-                isTakenByMe = true;
-                takenByName = spotData['name'] ?? 'You (Error reading name)';
+    // --- Modified buildSpotTile ---
+    Widget buildSpotTile(int displayIndex, SpotType type, String spotKey, int animationIndex) {
+      final spotData = spotsMap[spotKey];
+      bool isAvailable = spotData == null;
+      bool isReserved = spotData is String && spotData == 'RESERVED';
+      bool isTaken = !isAvailable && !isReserved;
+      bool isTakenByMe = false; String takenByName = 'Taken';
+      if (isTaken) { if (spotData is Map<String, dynamic>) { if (spotData['userId'] == _performerId) { isTakenByMe = true; takenByName = spotData['name'] ?? 'You'; } } else { takenByName = 'Error'; } }
+      bool isSelectedByMe = _selectedSpotKey == spotKey;
+      String titleText; Color titleColor = Colors.black; FontWeight titleWeight = FontWeight.normal; TextDecoration textDecoration = TextDecoration.none;
+      if (isSelectedByMe) { titleText = _performerStageName ?? 'Selecting...'; titleColor = Colors.blue; titleWeight = FontWeight.bold; }
+      else if (isTakenByMe) { titleText = takenByName; titleWeight = FontWeight.bold; titleColor = Colors.black87; }
+      else if (isTaken && !isTakenByMe) { titleText = 'Taken'; titleColor = Colors.grey.shade600; }
+      else if (isReserved) { titleText = 'Reserved'; titleColor = Colors.orange.shade700; }
+      else if (isAvailable) { titleText = 'Available'; titleColor = Colors.green.shade800; }
+      else { titleText = 'Unknown'; titleColor = Colors.red.shade900; }
+      String spotLabel; switch (type) { case SpotType.regular: spotLabel = "${displayIndex + 1}."; break; case SpotType.waitlist: spotLabel = "W${displayIndex + 1}."; break; case SpotType.bucket: spotLabel = "B${displayIndex + 1}."; break; }
+
+      // --- Modified Trailing Widget Logic ---
+      Widget? trailingWidget; // Make nullable
+      if (isSelectedByMe) {
+         // Show confirm/cancel when selecting an AVAILABLE spot
+         trailingWidget = Row(mainAxisSize: MainAxisSize.min, children: [ IconButton(icon: Icon(Icons.check_circle, color: Colors.green), onPressed: _isProcessing ? null : _confirmSelection, tooltip: 'Confirm Spot'), IconButton(icon: Icon(Icons.cancel, color: Colors.red), onPressed: _isProcessing ? null : _cancelSelection, tooltip: 'Cancel Selection'), ]);
+      } else if (isTakenByMe) {
+         // Show only remove button if spot is taken by current user
+         trailingWidget = IconButton(
+            icon: Icon(Icons.cancel, color: Colors.red.shade700),
+            tooltip: 'Remove Signup',
+            // Trigger confirmation dialog on tap (same as ListTile onTap now)
+            onPressed: _isProcessing ? null : () async {
+               bool? confirm = await _showRemoveConfirmationDialog(spotKey);
+               if (confirm == true) {
+                  _removeSignup(spotKey);
+               }
+            },
+         );
+      } else {
+         // No trailing widget for available (not selected), taken by other, or reserved
+         trailingWidget = SizedBox(width: 48); // Keep space consistent if needed
+      }
+      // --- End Trailing Widget Logic ---
+
+      // --- Build the ListTile inside a Card ---
+      Widget listTileContent = Card(
+         color: Colors.white.withAlpha((255 * 0.9).round()),
+         elevation: 3, margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+         child: ListTile(
+           leading: Text(spotLabel, style: TextStyle(fontSize: 16, color: Colors.black54)),
+           title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: titleWeight, decoration: textDecoration)),
+           trailing: trailingWidget, // Use the conditional trailing widget
+           // --- Modified onTap Logic ---
+           onTap: () async { // Make onTap async
+              if (isAvailable && !_isProcessing) {
+                 // Tap available spot: select it
+                 _selectSpot(spotKey, isAvailable);
+              } else if (isTakenByMe && !_isProcessing) {
+                 // Tap own spot: show remove confirmation
+                 bool? confirm = await _showRemoveConfirmationDialog(spotKey);
+                 if (confirm == true) {
+                    _removeSignup(spotKey);
+                 }
               }
-            } else {
-              takenByName = 'Error: Invalid Data';
-            }
-          }
-          bool isSelectedByMe = _selectedSpotKey == spotKey;
-          String titleText;
-          Color titleColor = Colors.black;
-          FontWeight titleWeight = FontWeight.normal;
-          TextDecoration textDecoration = TextDecoration.none;
-          if (isSelectedByMe) {
-            titleText = _performerStageName ?? 'Selecting...';
-            titleColor = Colors.blue;
-            titleWeight = FontWeight.bold;
-          } else if (isTakenByMe) {
-            titleText = takenByName;
-            titleWeight = FontWeight.bold;
-            titleColor = Colors.black87;
-          } else if (isTaken && !isTakenByMe) {
-            titleText = 'Taken';
-            titleColor = Colors.grey.shade600;
-          } else if (isReserved) {
-            titleText = 'Reserved';
-            titleColor = Colors.orange.shade700;
-          } else if (isAvailable) {
-            titleText = 'Available';
-            titleColor = Colors.green.shade800;
-          } else {
-            titleText = 'Unknown State';
-            titleColor = Colors.red.shade900;
-          }
-          String spotLabel;
-          switch (type) {
-            case SpotType.regular:
-              spotLabel = "${displayIndex + 1}.";
-              break;
-            case SpotType.waitlist:
-              spotLabel = "W${displayIndex + 1}.";
-              break;
-            case SpotType.bucket:
-              spotLabel = "B${displayIndex + 1}.";
-              break;
-          }
+              // No action if tapped on reserved, taken by other, or while processing
+           },
+           // --- End Modified onTap ---
+           tileColor: isSelectedByMe ? Colors.blue.shade50.withAlpha(200) : null,
+         ),
+      );
 
-          Widget trailingWidget = SizedBox(width: 60);
-          if (isSelectedByMe) {
-            trailingWidget = Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(
-                  icon: Icon(Icons.check_circle, color: Colors.green),
-                  onPressed: _isProcessing ? null : _confirmSelection,
-                  tooltip: 'Confirm Spot'),
-              IconButton(
-                  icon: Icon(Icons.cancel, color: Colors.red),
-                  onPressed: _isProcessing ? null : _cancelSelection,
-                  tooltip: 'Cancel Selection'),
-            ]);
-          }
+      // --- REMOVED Dismissible Wrapper ---
+      // Widget finalTile;
+      // if (isTakenByMe) { /* ... Dismissible ... */ } else { finalTile = listTileContent; }
 
-          Widget listTileContent = Card(
-            color: Colors.white.withAlpha((255 * 0.9).round()), // Use withAlpha
-            elevation: 3,
-            margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            child: ListTile(
-              leading: Text(spotLabel,
-                  style: TextStyle(fontSize: 16, color: Colors.black54)),
-              title: Text(titleText,
-                  style: TextStyle(
-                      color: titleColor,
-                      fontWeight: titleWeight,
-                      decoration: textDecoration)),
-              trailing: trailingWidget,
-              onTap: (isAvailable && !_isProcessing)
-                  ? () => _selectSpot(spotKey, isAvailable)
-                  : null,
-              tileColor: isSelectedByMe
-                  ? Colors.blue.shade50.withAlpha(200)
-                  : null, // Use withAlpha
-            ),
-          );
-
-          Widget finalTile;
-          if (isTakenByMe) {
-            finalTile = Dismissible(
-              key: ValueKey(spotKey),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                  decoration: BoxDecoration(
-                      color: Colors.red.withAlpha(204),
-                      borderRadius: BorderRadius.circular(10)),
-                  margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-                  padding: EdgeInsets.symmetric(horizontal: 20),
-                  alignment: Alignment.centerRight,
-                  child: Icon(Icons.delete_sweep, color: Colors.white)),
-              confirmDismiss: (direction) async =>
-                  await _showRemoveConfirmationDialog(spotKey),
-              onDismissed: (direction) {
-                _removeSignup(spotKey);
-              },
-              child: listTileContent,
-            );
-          } else {
-            finalTile = listTileContent;
-          }
-          return FadeInUp(
-              delay: Duration(milliseconds: (50 * animationIndex).round()),
-              duration: const Duration(milliseconds: 300),
-              child: finalTile);
-        }
+      // Apply animation directly to the Card/ListTile content
+      return FadeInUp( delay: Duration(milliseconds: (50 * animationIndex).round()), duration: const Duration(milliseconds: 300), child: listTileContent );
+    }
 
         // --- Building the list sections ---
         if (totalSpots > 0) {
@@ -566,7 +519,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                 style: TextStyle(color: Colors.grey.shade600));
                           }
                           return Text(
-                            "$currentBucketSignups Performer(s) in Draw",
+                            "Names in Bucket: $currentBucketSignups",
                             style: Theme.of(context)
                                 .textTheme
                                 .titleMedium

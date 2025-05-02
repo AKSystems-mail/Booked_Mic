@@ -10,17 +10,16 @@ import 'package:collection/collection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 
+
 // Import necessary screens
 import '../../role_selection_screen.dart';
 import 'signup_screen.dart';
 import '../../registration_screen.dart';
-// Removed import main.dart - not strictly needed if AwesomeNotifications is initialized there
 
-// Access the global instance from main.dart (implicitly, by calling AwesomeNotifications())
-// final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin(); // Removed
+
 
 class PerformerListScreen extends StatefulWidget {
-  const PerformerListScreen({super.key});
+  PerformerListScreen({Key? key}) : super(key: key);
 
   @override
   _PerformerListScreenState createState() => _PerformerListScreenState();
@@ -48,9 +47,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   @override
   void initState() {
     super.initState();
-    // Set up Awesome Notifications listeners if not already done globally
-    // It's better to do this once in main.dart
-    // AwesomeNotifications().setListeners(...);
   }
 
   @override
@@ -170,48 +166,136 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   // --- End Position Logic ---
 
 
-  // --- Widget for Signed-up Lists ---
-  Widget _buildSignedUpLists() {
+  // --- Widget to Build List Section (Used by both streams) ---
+  Widget _buildListSection(BuildContext context, String title, List<DocumentSnapshot> docs, bool showSpotNumber) {
+     if (docs.isEmpty) {
+              // Don't show anything if the list is empty for a cleaner look
+        return const SizedBox.shrink();
+        // return Padding(padding: const EdgeInsets.symmetric(vertical: 10.0), child: Center(child: Text("No lists found in '$title'.", style: TextStyle(color: Colors.black54))), );
+     }
+     return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+           Padding(
+             padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+             child: Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.black.withAlpha(200))),
+           ),
+           ListView.builder(
+             shrinkWrap: true, // Important inside Column/ListView
+             physics: NeverScrollableScrollPhysics(), // Disable scrolling for inner list
+             itemCount: docs.length,
+             itemBuilder: (context, index) {
+               final doc = docs[index];
+               final listData = doc.data() as Map<String, dynamic>? ?? {};
+               final String docId = doc.id;
+               String displayStatus = "In Bucket Draw"; // Default for bucket list
+
+               if (showSpotNumber) { // Calculate spot number only if needed
+                  displayStatus = "Unknown Spot";
+                  final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
+                  spotsMap.forEach((key, value) { if (value is Map && value['userId'] == currentUserId) displayStatus = "Spot: $key"; });
+               }
+
+               return FadeInUp(
+                 delay: Duration(milliseconds: 100 * index),
+                 duration: const Duration(milliseconds: 400),
+                 child: Card(
+                   color: Colors.white.withAlpha((255 * 0.9).round()),
+                   elevation: 3, margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                   child: ListTile(
+                     title: Text(listData['listName'] ?? 'Unnamed List', style: TextStyle(fontWeight: FontWeight.bold)),
+                     subtitle: Text(listData['address'] ?? 'No Address Provided'),
+                     trailing: Text(displayStatus, style: TextStyle(fontStyle: !showSpotNumber ? FontStyle.italic : FontStyle.normal)),
+                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SignupScreen(listId: docId))),
+                   ),
+                 ),
+               );
+             },
+           ),
+        ],
+     );
+  }
+  // --- End Helper ---
+
+
+  // --- Widget for Combined "My Signups" View ---
+  Widget _buildMySignupsView() {
     if (currentUserId == null) return Center(child: Text("Not logged in.", style: TextStyle(color: Colors.black54)));
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('Lists').where('signedUpUserIds', arrayContains: currentUserId).orderBy('createdAt', descending: true).snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return Center(child: CircularProgressIndicator(color: Colors.blue.shade600));
-        if (snapshot.hasError) return Center(child: Text('Error loading your lists: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900)));
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return Center(child: Text('You haven\'t signed up for any lists yet.', style: TextStyle(color: Colors.black54, fontSize: 16)));
-        // Call position update logic after build
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-           if (snapshot.hasData) { // Ensure data exists before processing
-              _updateAndNotifyPositions(snapshot.data!.docs);
-           }
-        });
-        return ListView.builder(
-          padding: EdgeInsets.only(top: 8.0, bottom: 80.0),
-          itemCount: snapshot.data!.docs.length,
-          itemBuilder: (context, index) {
-            final doc = snapshot.data!.docs[index];
-            final listData = doc.data() as Map<String, dynamic>? ?? {};
-            final String docId = doc.id;
-            String mySpot = "Unknown Spot";
-            final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
-            spotsMap.forEach((key, value) { if (value is Map && value['userId'] == currentUserId) mySpot = key; });
-            return FadeInUp(
-              delay: Duration(milliseconds: 100 * index), duration: const Duration(milliseconds: 400),
-              child: Card(
-                color: Colors.white.withOpacity(0.9), elevation: 3, margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                child: ListTile(
-                  title: Text(listData['listName'] ?? 'Unnamed List', style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(listData['address'] ?? 'No Address Provided'),
-                  trailing: Text("Your Spot: $mySpot"),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SignupScreen(listId: docId))),
-                ),
-              ),
-            );
-          },
-        );
-      },
+
+    // Query 1: Lists where user is in the main signup array
+    final onListStream = _firestore.collection('Lists')
+        .where('signedUpUserIds', arrayContains: currentUserId)
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+
+    // Query 2: Get IDs of lists where user is in the bucket subcollection
+    // Note: Collection Group queries require an index on the field being filtered (userId)
+    final bucketSignupsStream = _firestore.collectionGroup('bucketSignups')
+        .where('userId', isEqualTo: currentUserId)
+        .snapshots();
+
+    return ListView( // Use a ListView to hold the two sections
+       padding: EdgeInsets.only(bottom: 80.0), // Padding for FAB
+       children: [
+          // Section 1: On List
+          StreamBuilder<QuerySnapshot>(
+             stream: onListStream,
+             builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
+                if (snapshot.hasError) return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading lists: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900))));
+
+                // Trigger position update ONLY for this stream's data
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                   if (snapshot.hasData) { _updateAndNotifyPositions(snapshot.data!.docs); }
+                });
+
+                // Build section only if data exists
+                return _buildListSection(context, "On List", snapshot.data?.docs ?? [], true); // Pass true to show spot number
+             }
+          ),
+
+          // Section 2: Bucket Signups
+          StreamBuilder<QuerySnapshot>(
+             stream: bucketSignupsStream,
+             builder: (context, bucketSnapshot) {
+                if (bucketSnapshot.connectionState == ConnectionState.waiting) return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
+                if (bucketSnapshot.hasError) return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading bucket signups: ${bucketSnapshot.error}', style: TextStyle(color: Colors.red.shade900))));
+                if (!bucketSnapshot.hasData || bucketSnapshot.data!.docs.isEmpty) return SizedBox.shrink(); // Don't show section if empty
+
+                // Get the List IDs from the bucket signup docs
+                final List<String> bucketListIds = bucketSnapshot.data!.docs
+                    .map((doc) => doc.reference.parent.parent?.id) // Get parent (Lists) doc ID
+                    .where((id) => id != null) // Filter out potential nulls
+                    .cast<String>()
+                    .toSet() // Remove duplicates
+                    .toList();
+
+                if (bucketListIds.isEmpty) return SizedBox.shrink();
+
+                // Fetch the actual List documents for these IDs
+                // Using FutureBuilder + Future.wait for simplicity here
+                return FutureBuilder<List<DocumentSnapshot>>(
+                   future: Future.wait(
+                      bucketListIds.map((id) => _firestore.collection('Lists').doc(id).get())
+                   ),
+                   builder: (context, listDocsSnapshot) {
+                      if (listDocsSnapshot.connectionState == ConnectionState.waiting) return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
+                      if (listDocsSnapshot.hasError) return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading bucket list details: ${listDocsSnapshot.error}', style: TextStyle(color: Colors.red.shade900))));
+                      if (!listDocsSnapshot.hasData || listDocsSnapshot.data!.isEmpty) return SizedBox.shrink();
+
+                      // Filter out docs that might not exist anymore
+                      final validListDocs = listDocsSnapshot.data!.where((doc) => doc.exists).toList();
+
+                      return _buildListSection(context, "Bucket Draws Joined", validListDocs, false); // Pass false to hide spot number
+                   }
+                );
+             }
+          ),
+       ],
     );
   }
+  // --- End My Signups View ---
 
   // --- Widget for State Search Results ---
   Widget _buildSearchResultsBasedOnState(String state) {
@@ -309,7 +393,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
          width: double.infinity, height: double.infinity,
          decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Colors.blue.shade200, Colors.purple.shade100])),
          child: _selectedSearchState == null
-             ? _buildSignedUpLists()
+             ? _buildMySignupsView()
              : _buildSearchResultsBasedOnState(_selectedSearchState!),
       ),
       floatingActionButton: FadeInUp(
