@@ -62,11 +62,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     if (!mounted) return; // Check mounted before accessing context
     FocusScope.of(context).unfocus();
 
-    // --- Validate Form ---
-    // Use null check on currentState before calling validate
     final form = _formKey.currentState;
     if (form == null || !form.validate()) {
-       print("Form validation failed."); // Debug log
        return; // Don't proceed if form is invalid
     }
     // --- End Validate ---
@@ -83,17 +80,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         password: password,
       );
       // Sign in successful, check/update stage name if needed (optional)
-      if (userCredential.user != null) {
-      }
+      if (mounted && userCredential.user != null) _navigateToNextScreen();
 
-      if (mounted && userCredential.user != null) {
-        _navigateToNextScreen();
-      }
     } on FirebaseAuthException catch (e) {
-      // print("Sign-in failed: ${e.code}"); // Commented out
-      if (e.code == 'user-not-found' ||
-          e.code == 'invalid-credential' ||
-          e.code == 'INVALID_LOGIN_CREDENTIALS') {
+bool attemptCreate = e.code == 'user-not-found' || e.code == 'invalid-credential' || e.code == 'INVALID_LOGIN_CREDENTIALS';
+      if (attemptCreate) {
+         // --- Check Stage Name Here ---
+         if (stageName.isEmpty) {
+            if (mounted) setState(() { _errorMessage = 'Stage name is required to create an account with email.'; _isLoading = false; });
+            return; // Stop
+         }
 
         await _createUserWithEmailAndPassword(email, password, stageName);
       } else {
@@ -549,12 +545,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           ),
                         ),
                         textInputAction: TextInputAction.done,
-                        validator: (value) {
-                          if (_formKey.currentState != null &&
-                              _formKey.currentState!.validate() &&
-                              (value == null || value.trim().isEmpty)) {}
-                          return null;
-                        },
+                          validator: null,
                         onFieldSubmitted: (_) {
                           if (!_isLoading) {
                             _signInOrSignUpWithEmailAndPassword();
