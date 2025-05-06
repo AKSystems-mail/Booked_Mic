@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-// Keep for Timestamp
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:intl/intl.dart';
@@ -11,9 +10,10 @@ import 'package:google_places_flutter/model/prediction.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:myapp/providers/firestore_provider.dart';
-import 'package:myapp/models/show.dart';
+import 'package:myapp/models/show.dart'; // Assuming your Show model is here
+// import 'package:cloud_firestore/cloud_firestore.dart'; // For Timestamp
 
-import 'created_lists_screen.dart'; // Keep for navigation
+import 'created_lists_screen.dart';
 
 class ListSetupScreen extends StatefulWidget {
   const ListSetupScreen({super.key});
@@ -25,9 +25,10 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _listNameController = TextEditingController();
   final _addressController = TextEditingController();
-  final _spotsController = TextEditingController(text: '15');
+  final _spotsController = TextEditingController(text: '10');
   final _waitlistController = TextEditingController(text: '0');
   final _bucketController = TextEditingController(text: '0');
+  late FocusNode _addressFocusNode; // <<< 1. Declare FocusNode
 
   // State for Address Autocomplete
   String? _selectedAddressDescription;
@@ -42,6 +43,12 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
       dotenv.env['GOOGLE_MAPS_API_KEY'] ?? 'MISSING_API_KEY';
 
   @override
+  void initState() {
+    super.initState();
+    _addressFocusNode = FocusNode(); // <<< 2. Initialize FocusNode
+  }
+
+  @override
   @mustCallSuper
   void dispose() {
     _listNameController.dispose();
@@ -49,6 +56,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
     _spotsController.dispose();
     _waitlistController.dispose();
     _bucketController.dispose();
+    _addressFocusNode.dispose(); // <<< 3. Dispose FocusNode
     super.dispose();
   }
 
@@ -56,7 +64,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now().subtract(Duration(days: 1)),
+      firstDate: DateTime.now().subtract(Duration(days: 1)), // Ensure firstDate is not after initialDate
       lastDate: DateTime.now().add(Duration(days: 365 * 2)),
     );
     if (picked != null && picked != _selectedDate) {
@@ -66,43 +74,67 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
     }
   }
 
-  // Keep _extractStateAbbr - used by Autocomplete callback
   String? _extractStateAbbr(Prediction prediction) {
-    // Check terms - often state is second to last for US addresses
+     // Try to get state from 'terms' array first
     if (prediction.terms != null && prediction.terms!.length >= 2) {
-      final stateTerm = prediction.terms![prediction.terms!.length - 2];
-      if (stateTerm.value != null &&
-          stateTerm.value!.length == 2 &&
-          RegExp(r'^[a-zA-Z]+$').hasMatch(stateTerm.value!)) {
-        return stateTerm.value!.toUpperCase();
-      }
-    }
-    // Fallback: Check structured_formatting secondary_text
-    if (prediction.structuredFormatting?.secondaryText != null) {
-      final parts = prediction.structuredFormatting!.secondaryText!.split(', ');
-      if (parts.length >= 2) {
-        final statePart = parts[parts.length - 2];
-        if (statePart.length == 2 &&
-            RegExp(r'^[a-zA-Z]+$').hasMatch(statePart)) {
-          return statePart.toUpperCase();
+      // State is often the second to last term for US addresses
+      // e.g., [..., "City", "ST", "Country"] or [..., "City", "ST", "ZIP Code"]
+      // Iterate backwards from second to last term to find a 2-letter state code
+      for (int i = prediction.terms!.length - 2; i >= 0; i--) {
+        final termValue = prediction.terms![i].value;
+        if (termValue != null && termValue.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(termValue)) {
+          return termValue.toUpperCase();
         }
       }
     }
-    // print("Warning: Could not reliably extract state..."); // Commented out
-    return null; // Return null if not found
+    // Fallback: Check structured_formatting secondary_text (e.g., "City, ST, USA" or "City, ST ZIP")
+    if (prediction.structuredFormatting?.secondaryText != null) {
+      final parts = prediction.structuredFormatting!.secondaryText!.split(', ');
+      if (parts.length >= 2) { // Need at least "City, ST"
+        String potentialState = parts[1].trim(); // State is usually the second part
+         // Handle cases like "ST ZIP" by removing ZIP
+        if (potentialState.contains(" ")) {
+            potentialState = potentialState.split(" ")[0];
+        }
+        if (potentialState.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(potentialState)) {
+          return potentialState.toUpperCase();
+        }
+      }
+    }
+    return null;
+  }
+
+  // This method will only update internal state variables, NO setState HERE
+  void _updateAddressDetails(Prediction prediction) {
+    _selectedAddressDescription = prediction.description;
+    _selectedLat = double.tryParse(prediction.lat ?? '');
+    _selectedLng = double.tryParse(prediction.lng ?? '');
+    _selectedStateAbbr = _extractStateAbbr(prediction);
+
+    if (_selectedStateAbbr == null && mounted) {
+      // Use WidgetsBinding to schedule the SnackBar after the current frame
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) { // Re-check mounted as the callback is now async
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                  'Could not automatically determine state from address (details will be saved).'),
+              backgroundColor: Colors.orange));
+        }
+      });
+    }
   }
 
   Future<void> _createList() async {
-    if (_selectedAddressDescription == null ||
+     if (_selectedAddressDescription == null ||
         _selectedAddressDescription!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Please select a valid address using the search.')));
       return;
     }
-    if (_selectedStateAbbr == null) {
+    if (_selectedStateAbbr == null || _selectedStateAbbr!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-              'Could not determine state from selected address. Please try a different address format.'),
+              'Could not determine state from selected address. Please try a different address format or ensure the selection is complete.'),
           backgroundColor: Colors.orange));
       return;
     }
@@ -129,7 +161,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
       final int numberOfBucketSpots = int.tryParse(_bucketController.text) ?? 0;
 
       final newShow = Show(
-        id: '',
+        id: '', // Firestore will generate this
         showName: _listNameController.text.trim(),
         address: _selectedAddressDescription!,
         state: _selectedStateAbbr!,
@@ -139,10 +171,12 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
         numberOfSpots: numberOfSpots,
         numberOfWaitlistSpots: numberOfWaitlistSpots,
         numberOfBucketSpots: numberOfBucketSpots,
-        userId: user.uid,
         bucketSpots: numberOfBucketSpots > 0,
+        userId: user.uid,
+        // Assuming 'bucketSpots' boolean is not part of Show model based on edit screen
         spots: {},
         signedUpUserIds: [],
+        // createdAt will be handled by FirestoreProvider or Firestore itself if configured
       );
 
       await context.read<FirestoreProvider>().createShow(newShow);
@@ -150,11 +184,14 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('List created successfully!')));
-        Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (context) => CreatedListsScreen()));
+        // Navigate to CreatedListsScreen after successful creation
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => CreatedListsScreen()),
+          (Route<dynamic> route) => false, // Remove all previous routes
+        );
       }
     } catch (e) {
-      // print("Error creating list: $e"); // Commented out
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Error creating list: $e')));
@@ -191,7 +228,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
         ],
         maxLength: 3,
         validator: (value) {
-          if (value == null || value.isEmpty) return null;
+          if (value == null || value.isEmpty) return null; // Allow 0 spots
           final number = int.tryParse(value);
           if (number == null) return 'Invalid number';
           if (number < 0) return 'Cannot be negative';
@@ -251,6 +288,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
               child: GooglePlaceAutoCompleteTextField(
                 textEditingController: _addressController,
                 googleAPIKey: googleApiKey,
+                focusNode: _addressFocusNode, // <<< 4. Assign FocusNode
                 inputDecoration: InputDecoration(
                     labelText: "Address / Venue",
                     labelStyle: TextStyle(color: labelColor),
@@ -267,30 +305,23 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                             color: Theme.of(context).primaryColor, width: 1.5)),
                     prefixIcon: Icon(Icons.location_on_outlined,
                         color: Colors.grey.shade700)),
-                debounceTime: 400,
+                debounceTime: 400, // ms
                 countries: ["us"],
                 isLatLngRequired: true,
-                getPlaceDetailWithLatLng: (Prediction prediction) {
-                  _addressController.text = prediction.description ?? '';
-                  setState(() {
-                    _selectedAddressDescription = prediction.description;
-                    _selectedLat = double.tryParse(prediction.lat ?? '');
-                    _selectedLng = double.tryParse(prediction.lng ?? '');
-                    // --- *** CALL _extractStateAbbr HERE *** ---
-                    _selectedStateAbbr = _extractStateAbbr(prediction);
-                  });
-                  if (_selectedStateAbbr == null && mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(
-                            'Could not automatically determine state from address.'),
-                        backgroundColor: Colors.orange));
-                  }
-                },
+                getPlaceDetailWithLatLng: _updateAddressDetails, // Assign the new method
                 itemClick: (Prediction prediction) {
                   _addressController.text = prediction.description ?? '';
                   _addressController.selection = TextSelection.fromPosition(
                       TextPosition(
                           offset: prediction.description?.length ?? 0));
+                  _updateAddressDetails(prediction); // Update internal state variables
+
+                  // Request focus after the current frame to ensure other UI updates have settled
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _addressFocusNode.canRequestFocus) { // Check if widget is still mounted and node can request focus
+                      _addressFocusNode.requestFocus();
+                    }
+                  });
                 },
               ),
             ),
@@ -370,8 +401,15 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
             const Text('Setup New List', style: TextStyle(color: Colors.white)),
         leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.pushReplacement(context,
-                MaterialPageRoute(builder: (context) => CreatedListsScreen()))),
+            onPressed: () {
+              if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+              } else {
+                // Fallback for web or if no previous route
+                Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => CreatedListsScreen()));
+              }
+            }
+        ),
       ),
       body: Container(
         width: double.infinity,
