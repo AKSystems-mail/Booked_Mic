@@ -536,8 +536,8 @@ class _SignupScreenState extends State<SignupScreen> {
                                     : Icons.person_add_alt_1,
                                 color: Colors.white),
                             label: Text(_isUserAlreadyInBucket
-                                ? 'Leave Bucket Draw'
-                                : 'Join Bucket Draw'),
+                                ? 'Take Your Name Out of Bucket'
+                                : 'Add Your Name to Bucket'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _isUserAlreadyInBucket
                                   ? Colors.orange.shade700

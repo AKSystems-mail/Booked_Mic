@@ -1,6 +1,7 @@
 // lib/services/firestore_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:myapp/models/show.dart';
+import 'dart:math';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -149,6 +150,78 @@ class FirestoreService {
               .snapshots()
               .map((snapshot) => snapshot.size); // Map snapshot to size (count)
   }
+
+  // In FirestoreService class
+
+Future<List<QueryDocumentSnapshot>> getBucketSignups(String listId) async {
+  try {
+    final QuerySnapshot snapshot = await _db
+        .collection(_listCollection)
+        .doc(listId)
+        .collection('bucketSignups')
+        .get();
+    return snapshot.docs;
+  } catch (e) {
+    // print("Error fetching bucket signups for list $listId: $e");
+    rethrow;
+  }
+}
+
+// In FirestoreService class
+
+Future<Map<String, dynamic>?> drawAndAssignBucketSpot(String listId, String bucketSpotKey) async {
+  final List<QueryDocumentSnapshot> bucketDocs = await getBucketSignups(listId);
+
+  if (bucketDocs.isEmpty) {
+    // print("Bucket is empty for list $listId. Cannot draw.");
+    return null; // Or throw an exception: throw Exception('Bucket is empty.');
+  }
+
+  // Randomly select a performer
+  final random = Random();
+  final selectedDoc = bucketDocs[random.nextInt(bucketDocs.length)];
+  final selectedPerformerData = selectedDoc.data() as Map<String, dynamic>?;
+
+  if (selectedPerformerData == null || 
+      selectedPerformerData['userId'] == null || 
+      selectedPerformerData['stageName'] == null) {
+    // print("Selected bucket document has invalid data: ${selectedDoc.id}");
+    throw Exception('Selected bucket performer has invalid data.');
+  }
+
+  final String performerUserId = selectedPerformerData['userId'];
+  final String performerName = selectedPerformerData['stageName'];
+
+  // Prepare data for the spot
+  final Map<String, dynamic> spotData = {
+    'userId': performerUserId,
+    'name': performerName,
+    // 'timestamp': FieldValue.serverTimestamp(), // Optional: if you want to track when they were added
+  };
+
+  try {
+    WriteBatch batch = _db.batch();
+
+    // 1. Update the main list document with the drawn performer for the specific bucket spot
+    DocumentReference listDocRef = _db.collection(_listCollection).doc(listId);
+    batch.update(listDocRef, {'spots.$bucketSpotKey': spotData});
+
+    // 2. Remove the drawn performer from the bucketSignups subcollection
+    DocumentReference bucketSignupDocRef = _db
+        .collection(_listCollection)
+        .doc(listId)
+        .collection('bucketSignups')
+        .doc(performerUserId); // Assuming doc ID is the userId
+    batch.delete(bucketSignupDocRef);
+
+    await batch.commit();
+    // print("Successfully drew $performerName ($performerUserId) for spot $bucketSpotKey and removed from bucket.");
+    return spotData; // Return the data of the assigned spot
+  } catch (e) {
+    // print("Error during drawAndAssignBucketSpot transaction for list $listId: $e");
+    rethrow;
+  }
+}
 
   // Check if a specific user is in the bucket
   Future<bool> isUserInBucket(String listId, String userId) async {
