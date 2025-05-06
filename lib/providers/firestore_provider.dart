@@ -77,5 +77,15 @@ class FirestoreProvider extends ChangeNotifier {
    Future<int> getBucketSignupCount(String listId) async {
      return await _firestoreService.getBucketSignupCount(listId);
   }
-  // --- Remove City/Performer methods if unused ---
+
+  // In FirestoreProvider class
+
+Future<Map<String, dynamic>?> drawAndAssignBucketSpot(String listId, String bucketSpotKey) async {
+  try {
+    return await _firestoreService.drawAndAssignBucketSpot(listId, bucketSpotKey);
+  } catch (e) {
+    // print("FirestoreProvider error in drawAndAssignBucketSpot: $e");
+    rethrow;
+  }
+}
 }

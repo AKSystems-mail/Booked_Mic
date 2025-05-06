@@ -656,6 +656,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.0"
+  random_text_reveal:
+    dependency: "direct main"
+    description:
+      name: random_text_reveal
+      sha256: "6bbc9f875afff31cad56190e0b44d93b671469865103b2912e52e24d9143f0ef"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.7"
   rxdart:
     dependency: transitive
     description:

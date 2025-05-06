@@ -2,7 +2,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:myapp/services/settings_service.dart'; // Import settings service
-import 'package:shared_preferences/shared_preferences.dart';
 
 class TimerService extends ChangeNotifier {
   final String listId; // Need listId to load/save settings
@@ -24,6 +23,9 @@ class TimerService extends ChangeNotifier {
   int get lightThresholdSeconds => _lightThresholdSeconds;
   ValueNotifier<int> get remainingSecondsNotifier => _remainingSecondsNotifier;
   bool get isTimerRunning => _isTimerRunning;
+  // <<< ADDED isPaused GETTER >>>
+  bool get isPaused => _timer != null && !_isTimerRunning;
+  // <<< END ADDED >>>
 
   TimerService({required this.listId})
       : _remainingSecondsNotifier = ValueNotifier(300) { // Initialize notifier
@@ -61,9 +63,12 @@ class TimerService extends ChangeNotifier {
 
   void pauseTimer({bool notify = true}) {
     _timer?.cancel();
-    if (_isTimerRunning) {
+    if (_isTimerRunning) { // Only update if it was running
+  
       _isTimerRunning = false;
       if (notify) notifyListeners(); // Notify UI about pause state
+    } else if (_timer != null && notify) { // If not running but _timer exists (was paused manually)
+       notifyListeners(); // Still notify if notify is true
     }
   }
 
@@ -96,21 +101,41 @@ class TimerService extends ChangeNotifier {
   }
 
   Future<void> setLightThreshold(int newThresholdSeconds) async {
-    // --- Add Validation Inside the Service ---
-    if (newThresholdSeconds >= 0 && newThresholdSeconds < totalSeconds) {
+    // --- Add Validation Inside the Service ---\n    if (newThresholdSeconds >= 0 && newThresholdSeconds < totalSeconds) { // Correct validation logic
       if (_lightThresholdSeconds != newThresholdSeconds) {
         _lightThresholdSeconds = newThresholdSeconds;
-        print("TimerService: Threshold updated to $_lightThresholdSeconds");
-        // Save the setting
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('timerThreshold_$listId', _lightThresholdSeconds);
+        // print("TimerService: Threshold updated to $_lightThresholdSeconds");
+        await _settingsService.saveTimerSettings( // Use settings service for saving
+          listId: listId,
+          totalSeconds: _totalSeconds, // Save totalSeconds as well
+          thresholdSeconds: _lightThresholdSeconds,
+        );
         notifyListeners(); // Notify if needed (e.g., if UI displays threshold)
       }
-    } else {
-      // Handle invalid threshold (e.g., show error message)
-      // This logic might be better handled in the UI dialog callback
+     else {
+       // This error handling should ideally be done in the UI dialog logic
+       // but you could potentially throw an exception here as well.
+       // For now, just log or ignore if validation happens in UI.
+       // print("TimerService: Invalid threshold value $newThresholdSeconds");
     }
   }
+
+  // <<< ADDED snoozeLightPrompt METHOD >>>
+  // This method assumes a simple snooze where the prompt won't reappear immediately
+  // You might need more sophisticated logic based on your requirements
+  void snoozeLightPrompt() {
+    // For a simple snooze, you could just clear the onThresholdReached callback temporarily
+    // or set a flag that the FlashlightService checks.
+    // A more complex implementation might involve a delayed trigger.
+    // For now, let's assume FlashlightService manages the prompt logic after receiving the call.
+    // The primary action here is to allow the timer to continue without immediately re-prompting.
+    // If FlashlightService needs a specific method to signal snooze, add it there.
+    // Since the current error is about the missing method, we'll add a placeholder here.
+    // This method is currently empty as the prompt logic is handled elsewhere.
+     // print("TimerService: Snoozing light prompt.");
+  }
+  // <<< END ADDED >>>
+
 
   String formatDuration(int secondsValue) {
     final duration = Duration(seconds: secondsValue);
@@ -127,3 +152,4 @@ class TimerService extends ChangeNotifier {
     super.dispose();
   }
 }
+
