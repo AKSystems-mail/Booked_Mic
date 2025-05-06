@@ -12,9 +12,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 
 import 'package:myapp/providers/firestore_provider.dart';
-// import 'package:myapp/models/show.dart';
-
-// Keep Show model import
+import 'package:myapp/models/show.dart'; // Ensure your Show model is imported
 
 class EditListScreen extends StatefulWidget {
   final String listId;
@@ -32,6 +30,7 @@ class _EditListScreenState extends State<EditListScreen> {
   late TextEditingController _waitlistController;
   late TextEditingController _bucketController;
   late TextEditingController _addressController;
+  late FocusNode _addressFocusNode; // <<< 1. Declare FocusNode
 
   String? _selectedAddressDescription;
   String? _selectedStateAbbr;
@@ -41,7 +40,7 @@ class _EditListScreenState extends State<EditListScreen> {
   DateTime? _selectedDate;
   bool _isLoading = true;
   bool _isSaving = false;
-  bool _isResetting = false; // Declare _isResetting
+  bool _isResetting = false;
 
   final String googleApiKey =
       dotenv.env['GOOGLE_MAPS_API_KEY'] ?? 'MISSING_API_KEY';
@@ -54,6 +53,7 @@ class _EditListScreenState extends State<EditListScreen> {
     _waitlistController = TextEditingController();
     _bucketController = TextEditingController();
     _addressController = TextEditingController();
+    _addressFocusNode = FocusNode(); // <<< 2. Initialize FocusNode
     _fetchListData();
   }
 
@@ -65,13 +65,14 @@ class _EditListScreenState extends State<EditListScreen> {
     _waitlistController.dispose();
     _bucketController.dispose();
     _addressController.dispose();
+    _addressFocusNode.dispose(); // <<< 3. Dispose FocusNode
     super.dispose();
   }
 
   Future<void> _fetchListData() async {
     try {
       final firestoreProvider = context.read<FirestoreProvider>();
-      final showData = await firestoreProvider.getShow(widget.listId).first;
+      final Show showData = await firestoreProvider.getShow(widget.listId).first;
 
       if (mounted) {
         _listNameController.text = showData.showName;
@@ -89,51 +90,71 @@ class _EditListScreenState extends State<EditListScreen> {
         });
       }
     } catch (e) {
-      // print("Error fetching list data: $e"); // Commented out
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error fetching list details: $e'),
             backgroundColor: Colors.red));
-        Navigator.pop(context);
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
       }
     }
   }
 
-  // Keep _selectDate - used by DatePicker ListTile
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context, // Added context
+     final DateTime? picked = await showDatePicker(
+      context: context,
       initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now().subtract(Duration(days: 30)), // Added firstDate
-      lastDate: DateTime.now().add(Duration(days: 365 * 2)), // Added lastDate
+      firstDate: DateTime.now().subtract(Duration(days: 30)),
+      lastDate: DateTime.now().add(Duration(days: 365 * 2)),
     );
     if (picked != null && picked != _selectedDate) {
       setState(() => _selectedDate = picked);
     }
   }
 
-  // Keep _extractStateAbbr - used by Autocomplete callback
   String? _extractStateAbbr(Prediction prediction) {
     if (prediction.terms != null && prediction.terms!.length >= 2) {
-      final stateTerm = prediction.terms![prediction.terms!.length - 2];
-      if (stateTerm.value != null &&
-          stateTerm.value!.length == 2 &&
-          RegExp(r'^[a-zA-Z]+$').hasMatch(stateTerm.value!)) {
-        return stateTerm.value!.toUpperCase();
+      for (int i = prediction.terms!.length - 2; i >= 0; i--) {
+        final termValue = prediction.terms![i].value;
+        if (termValue != null && termValue.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(termValue)) {
+          return termValue.toUpperCase();
+        }
       }
     }
     if (prediction.structuredFormatting?.secondaryText != null) {
       final parts = prediction.structuredFormatting!.secondaryText!.split(', ');
       if (parts.length >= 2) {
-        final statePart = parts[parts.length - 2];
-        if (statePart.length == 2 &&
-            RegExp(r'^[a-zA-Z]+$').hasMatch(statePart)) {
-          return statePart.toUpperCase();
+        String potentialState = parts[1].trim();
+        if (potentialState.contains(" ")) {
+            potentialState = potentialState.split(" ")[0];
+        }
+        if (potentialState.length == 2 && RegExp(r'^[a-zA-Z]+$').hasMatch(potentialState)) {
+          return potentialState.toUpperCase();
         }
       }
     }
-    // print("Warning: Could not reliably extract state..."); // Commented out
-    return null; // Added return
+    return null;
+  }
+
+  // <<< Define _updateAddressDetails method >>>
+  // This method will only update internal state variables, NO setState HERE
+  void _updateAddressDetails(Prediction prediction) {
+    _selectedAddressDescription = prediction.description;
+    _selectedLat = double.tryParse(prediction.lat ?? "0.0");
+    _selectedLng = double.tryParse(prediction.lng ?? "0.0");
+    _selectedStateAbbr = _extractStateAbbr(prediction);
+
+    if (_selectedStateAbbr == null && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                  'Could not automatically determine state from address (details will be saved).'),
+              backgroundColor: Colors.orange));
+        }
+      });
+    }
   }
 
   Future<void> _updateList() async {
@@ -141,10 +162,16 @@ class _EditListScreenState extends State<EditListScreen> {
         _selectedAddressDescription!.isEmpty ||
         _selectedStateAbbr == null ||
         _selectedStateAbbr!.isEmpty) {
-      /* ... Address validation ... */ return;
+       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Please select a valid address with a state using the search.'),
+            backgroundColor: Colors.orange));
+      return;
     }
     if (_selectedDate == null) {
-      /* ... Date validation ... */ return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Please select a date for the list.'),
+            backgroundColor: Colors.orange));
+      return;
     }
     if (!_formKey.currentState!.validate()) return;
 
@@ -157,9 +184,8 @@ class _EditListScreenState extends State<EditListScreen> {
           int.tryParse(_waitlistController.text) ?? 0;
       final int numberOfBucketSpots = int.tryParse(_bucketController.text) ?? 0;
 
-      // Create the update map directly
       final Map<String, dynamic> updatedData = {
-        'listName': _listNameController.text.trim(),
+        'showName': _listNameController.text.trim(),
         'address': _selectedAddressDescription!,
         'state': _selectedStateAbbr!,
         'latitude': _selectedLat,
@@ -169,8 +195,6 @@ class _EditListScreenState extends State<EditListScreen> {
         'numberOfWaitlistSpots': numberOfWaitlistSpots,
         'numberOfBucketSpots': numberOfBucketSpots,
       };
-
-      // Use provider to update using the Map
       await context
           .read<FirestoreProvider>()
           .updateShowMap(widget.listId, updatedData);
@@ -178,10 +202,11 @@ class _EditListScreenState extends State<EditListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('List updated successfully!')));
-        Navigator.pop(context);
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
       }
     } catch (e) {
-      // print("Error updating list: $e"); // Commented out
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error updating list: $e'),
@@ -198,7 +223,7 @@ class _EditListScreenState extends State<EditListScreen> {
 
   Widget _buildNumberTextField(
       {required TextEditingController controller, required String label}) {
-    return TextFormField(
+     return TextFormField(
         controller: controller,
         style: TextStyle(color: Colors.black87),
         decoration: InputDecoration(
@@ -227,14 +252,13 @@ class _EditListScreenState extends State<EditListScreen> {
         });
   }
 
-  // --- Reset List Functions ---
   Future<void> _showResetConfirmationDialog() async {
-    if (!mounted) return;
+     if (!mounted) return;
     final bool? confirm = await showDialog<bool>(
         context: context,
         builder: (BuildContext dialogContext) {
           return AlertDialog(
-            title: Text('Reset List?'),
+            title: Text('Reset List Spots?'),
             content: Text(
                 'This will remove ALL performer names and signups from this list. Are you sure?'),
             actions: <Widget>[
@@ -256,7 +280,6 @@ class _EditListScreenState extends State<EditListScreen> {
 
   Future<void> _resetListSpots() async {
     if (!mounted) return;
-    // Use _isResetting here
     setState(() {
       _isResetting = true;
     });
@@ -267,15 +290,13 @@ class _EditListScreenState extends State<EditListScreen> {
             SnackBar(content: Text('List spots reset successfully.')));
       }
     } catch (e) {
-      // print("Error resetting list: $e"); // Commented out
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error resetting list: $e'),
+            content: Text('Error resetting list spots: $e'),
             backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {
-        // Use _isResetting here
         setState(() {
           _isResetting = false;
         });
@@ -287,7 +308,8 @@ class _EditListScreenState extends State<EditListScreen> {
   Widget build(BuildContext context) {
     final Color appBarColor = Colors.blue.shade400;
     final Color buttonColor = Colors.blue.shade600;
-    final Color resetButtonColor = Colors.white;
+    final Color resetButtonBackgroundColor = Colors.red;
+    final Color resetButtonTextColor = Colors.white;
     final Color labelColor = Colors.grey.shade800;
 
     return Scaffold(
@@ -306,7 +328,6 @@ class _EditListScreenState extends State<EditListScreen> {
                     begin: Alignment.topRight,
                     end: Alignment.bottomLeft,
                     colors: [Colors.blue.shade200, Colors.purple.shade100])),
-            // --- Build content directly based on loading state ---
             child: _isLoading
                 ? Center(child: CircularProgressIndicator(color: appBarColor))
                 : (googleApiKey == 'MISSING_API_KEY'
@@ -321,12 +342,10 @@ class _EditListScreenState extends State<EditListScreen> {
                                     fontSize: 16),
                                 textAlign: TextAlign.center)))
                     : Form(
-                        // Show form only if not loading and API key exists
                         key: _formKey,
                         child: ListView(
                           padding: const EdgeInsets.all(16.0),
                           children: [
-                            // List Name
                             FadeInDown(
                                 duration: const Duration(milliseconds: 500),
                                 child: TextFormField(
@@ -334,9 +353,10 @@ class _EditListScreenState extends State<EditListScreen> {
                                     style: TextStyle(color: Colors.black87),
                                     decoration: InputDecoration(
                                       labelText: 'List Name',
-                                      labelStyle: TextStyle(
-                                          color:
-                                              labelColor), /* ... borders ... */
+                                      labelStyle: TextStyle(color:labelColor),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade400)),
+                                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.5)),
                                     ),
                                     textCapitalization: TextCapitalization.sentences,
                                     validator: (v) =>
@@ -344,50 +364,41 @@ class _EditListScreenState extends State<EditListScreen> {
                                             ? 'Enter name'
                                             : null)),
                             const SizedBox(height: 16),
-                            // Address Autocomplete
                             FadeInDown(
                               duration: const Duration(milliseconds: 600),
                               child: GooglePlaceAutoCompleteTextField(
                                 textEditingController: _addressController,
                                 googleAPIKey: googleApiKey,
+                                focusNode: _addressFocusNode, // <<< 4. Assign FocusNode
                                 inputDecoration: InputDecoration(
                                   labelText: "Address / Venue",
                                   labelStyle: TextStyle(color: labelColor),
-                                  hintText: "Search Address or Venue", /* ... */
+                                  hintText: "Search Address or Venue",
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade400)),
+                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.5)),
+                                  prefixIcon: Icon(Icons.location_on_outlined, color: Colors.grey.shade700),
                                 ),
-                                getPlaceDetailWithLatLng:
-                                    (Prediction prediction) {
-                                  _addressController.text =
-                                      prediction.description ?? '';
-                                  setState(() {
-                                    _selectedAddressDescription =
-                                        prediction.description;
-                                    _selectedLat =
-                                        double.tryParse(prediction.lat ?? '');
-                                    _selectedLng =
-                                        double.tryParse(prediction.lng ?? '');
-                                    // --- *** CALL _extractStateAbbr HERE *** ---
-                                    _selectedStateAbbr =
-                                        _extractStateAbbr(prediction);
-                                    // --- *** END CALL *** ---
-                                  });
-                                  // Show warning if state couldn't be extracted
-                                  if (_selectedStateAbbr == null && mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                            content: Text(
-                                                'Could not automatically determine state from address.'),
-                                            backgroundColor: Colors.orange));
-                                  }
-                                  // else { print("Extracted State: $_selectedStateAbbr"); } // Commented out
-                                },
+                                debounceTime: 400,
+                                countries: ["us"],
+                                isLatLngRequired: true,
+                                getPlaceDetailWithLatLng: _updateAddressDetails, // <<< Use the new method here
                                 itemClick: (Prediction prediction) {
-                                  /* ... Update controller ... */
+                                  _addressController.text = prediction.description ?? '';
+                                  _addressController.selection = TextSelection.fromPosition(
+                                      TextPosition(offset: prediction.description?.length ?? 0));
+                                  _updateAddressDetails(prediction); // Update internal state
+
+                                  // Request focus after the current frame
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                     if (mounted && _addressFocusNode.canRequestFocus) {
+                                        _addressFocusNode.requestFocus();
+                                     }
+                                  });
                                 },
                               ),
                             ),
                             const SizedBox(height: 16),
-                            // Date Picker
                             FadeInDown(
                                 duration: const Duration(milliseconds: 700),
                                 child: Card(
@@ -417,7 +428,6 @@ class _EditListScreenState extends State<EditListScreen> {
                                         trailing:
                                             Icon(Icons.arrow_drop_down, color: Colors.grey.shade700)))),
                             const SizedBox(height: 24),
-                            // Spot Number Fields
                             FadeInDown(
                                 duration: const Duration(milliseconds: 800),
                                 child: _buildNumberTextField(
@@ -436,11 +446,7 @@ class _EditListScreenState extends State<EditListScreen> {
                                     controller: _bucketController,
                                     label: 'Number of Bucket Spots')),
                             const SizedBox(height: 32),
-
-                            // --- Save Button ---
-                            // Use ElevatedButton, disable based on state
                             ElevatedButton(
-                              // Disable if saving OR resetting
                               onPressed: (_isSaving || _isResetting)
                                   ? null
                                   : _updateList,
@@ -453,7 +459,7 @@ class _EditListScreenState extends State<EditListScreen> {
                                       borderRadius:
                                           BorderRadius.circular(10.0))),
                               child:
-                                  (_isSaving) // Show progress indicator if saving
+                                  (_isSaving)
                                       ? SizedBox(
                                           height: 20,
                                           width: 20,
@@ -465,41 +471,35 @@ class _EditListScreenState extends State<EditListScreen> {
                                               fontSize: 18,
                                               color: Colors.white)),
                             ),
-                            // --- End Save Button ---
-
                             const SizedBox(height: 20),
-
-                            // --- Reset Button ---
-                            // Use OutlinedButton, disable based on state
                             ElevatedButton.icon(
                               icon: Icon(Icons.refresh,
                                   color: (_isSaving || _isResetting)
-                                      ? Colors.grey
-                                      : resetButtonColor), // Grey out icon when disabled
-                              label: Text('Reset List',
+                                      ? Colors.grey // Icon color when disabled
+                                      : resetButtonTextColor), // Icon color when enabled
+                              label: Text('Reset List Spots', // Changed label
                                   style: TextStyle(
                                       color: (_isSaving || _isResetting)
-                                          ? Colors.grey
-                                          : Colors.white,
+                                          ? Colors.grey // Text color when disabled
+                                          : resetButtonTextColor, // Text color when enabled
                                       fontWeight: FontWeight.bold)),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
+                                backgroundColor: (_isSaving || _isResetting)
+                                    ? Colors.grey.shade300 // Background when disabled
+                                    : resetButtonBackgroundColor, // Background when enabled
+                                foregroundColor: resetButtonTextColor, // Default icon/text color (overridden above)
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10.0)),
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 14),
                               ),
-                              // Disable if saving OR resetting
                               onPressed: (_isSaving || _isResetting)
                                   ? null
                                   : _showResetConfirmationDialog,
                             )
                           ],
                         ),
-                      )
-
-                // --- *** END RESET BUTTON *** ---
-
-                )));
+                      )))
+        );
   }
 }

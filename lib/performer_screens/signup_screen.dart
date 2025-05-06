@@ -164,7 +164,7 @@ class _SignupScreenState extends State<SignupScreen> {
         final bool isInBucket = await firestoreProvider.isUserInBucket(
             widget.listId, _performerId!);
         if (isInBucket) {
-          throw Exception("You are already in the bucket draw.");
+          throw Exception("You are already on the bucket list.");
         }
 
         await _firestore.runTransaction((transaction) async {
@@ -242,7 +242,7 @@ class _SignupScreenState extends State<SignupScreen> {
             List<String>.from(listData['signedUpUserIds'] ?? []);
         if (signedUpIds.contains(_performerId!)) {
           throw Exception(
-              "Cannot join bucket draw; you are already signed up for a main/waitlist spot.");
+              "Cannot join bucket list; you are already signed up for a main/waitlist spot.");
         }
 
         // Use the current state checked in initState/updated after action
@@ -254,7 +254,7 @@ class _SignupScreenState extends State<SignupScreen> {
               _isUserAlreadyInBucket = false;
             }); // Update local state
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Removed from bucket draw.'),
+                content: Text('Removed from bucket list.'),
                 backgroundColor: Colors.orange));
           }
         } else {
@@ -265,7 +265,7 @@ class _SignupScreenState extends State<SignupScreen> {
               _isUserAlreadyInBucket = true;
             }); // Update local state
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Joined bucket draw!'),
+                content: Text('Joined bucket list!'),
                 backgroundColor: Colors.green));
           }
         }

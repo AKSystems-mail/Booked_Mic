@@ -251,7 +251,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                 });
 
                 // Build section only if data exists
-                return _buildListSection(context, "On List", snapshot.data?.docs ?? [], true); // Pass true to show spot number
+                return _buildListSection(context, "Lists You're On", snapshot.data?.docs ?? [], true); // Pass true to show spot number
              }
           ),
 
@@ -287,7 +287,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                       // Filter out docs that might not exist anymore
                       final validListDocs = listDocsSnapshot.data!.where((doc) => doc.exists).toList();
 
-                      return _buildListSection(context, "Bucket Draws Joined", validListDocs, false); // Pass false to hide spot number
+                      return _buildListSection(context, "Buckets You're In", validListDocs, false); // Pass false to hide spot number
                    }
                 );
              }
