@@ -10,6 +10,8 @@ import 'package:collection/collection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 import 'package:intl/intl.dart'; // Import DateFormat
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:io' show Platform; // To check the platform
 
 // Import necessary screens
 import '../../role_selection_screen.dart';
@@ -183,6 +185,8 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     }
   }
 
+
+
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs) {
     if (!mounted || currentUserId == null) return;
     final today = DateTime.now();
@@ -244,108 +248,164 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     }
   }
 
-  Widget _buildListSection(BuildContext context, String title,
-      List<DocumentSnapshot> docs, bool showSpotNumber) {
-    if (docs.isEmpty) {
-      return const SizedBox.shrink();
+  Future<void> _launchMaps(String address) async {
+    if (address.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Address is not available.')),
+        );
+      }
+      return;
     }
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
-        child: Text(title,
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(color: Colors.black.withAlpha(200))),
-      ),
-      // Inside _buildListSection method:
 
-      ListView.builder(
-        shrinkWrap: true,
-        physics: NeverScrollableScrollPhysics(),
-        itemCount: docs.length,
-        itemBuilder: (context, index) {
-          final doc = docs[index];
-          final listData = doc.data() as Map<String, dynamic>? ?? {};
-          final String docId = doc.id;
-          String displayStatus = "In Bucket Draw";
+    String query = Uri.encodeComponent(address);
+    Uri? mapUri;
 
-          final Timestamp? showTimestamp = listData['date'] as Timestamp?;
-          String formattedDate = '';
-          if (showTimestamp != null) {
-            formattedDate =
-                DateFormat('EEE, MMM d').format(showTimestamp.toDate());
-          }
+    if (Platform.isAndroid) {
+      // Prefers Google Maps app if available, otherwise opens in browser
+      mapUri = Uri.parse('geo:0,0?q=$query');
+    } else if (Platform.isIOS) {
+      // Opens Apple Maps
+      mapUri = Uri.parse('maps://maps.apple.com/?q=$query');
+      // Alternative for iOS that might sometimes be more reliable if the above fails,
+      // or if you want to ensure it opens in a browser first then redirects.
+      // mapUri = Uri.parse('http://maps.apple.com/?address=$query');
+    } else {
+      // Generic fallback for web or other platforms
+      mapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+    }
 
-          if (showSpotNumber) {
-            displayStatus = "Unknown Spot";
-            final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
-            spotsMap.forEach((key, value) {
-              if (value is Map && value['userId'] == currentUserId) {
-                displayStatus = "Spot: $key";
-              }
-            });
-          }
+    try {
+      if (await canLaunchUrl(mapUri)) {
+        await launchUrl(mapUri);
+      } else {
+        // If the preferred map app URI fails, try the generic web Google Maps search
+        // This is a good fallback, especially if a specific map app isn't installed.
+        Uri webMapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+        if (await canLaunchUrl(webMapUri)) {
+          await launchUrl(webMapUri);
+        } else {
+          throw 'Could not launch $mapUri or web fallback';
+        }
+      }
+    } catch (e) {
+      print('Error launching maps: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open maps app.')),
+        );
+      }
+    }
+  }
 
-          return FadeInUp(
-            delay: Duration(milliseconds: 100 * index),
-            duration: const Duration(milliseconds: 400),
-            child: Card(
-              color: Colors.white.withAlpha((255 * 0.9).round()),
-              elevation: 3,
-              margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              child: ListTile(
-                // --- MODIFIED TITLE ---
-                title: Text(
-                  listData['listName'] ?? 'Unnamed List',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                // --- SUBTITLE REMAINS THE SAME ---
-                subtitle: Text(listData['address'] ?? 'No Address Provided',
-                    overflow: TextOverflow.ellipsis),
-                // --- MODIFIED TRAILING ---
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment
-                      .center, // Vertically center the content in the trailing space
-                  crossAxisAlignment: CrossAxisAlignment
-                      .end, // Right-align the text within the Column
-                  children: <Widget>[
-                    if (formattedDate.isNotEmpty)
-                      Text(
-                        formattedDate,
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.black54,
-                            fontWeight: FontWeight.w500),
-                      ),
-                    // Add a small space if both date and status are present
-                    if (formattedDate.isNotEmpty && displayStatus.isNotEmpty)
-                      SizedBox(height: 4.0), // Adjust spacing as needed
-                    Text(
-                      displayStatus,
-                      style: TextStyle(
-                        fontStyle: !showSpotNumber
-                            ? FontStyle.italic
-                            : FontStyle.normal,
-                        color: Colors.grey.shade700,
-                        fontSize: 12, // Optional: adjust font size if needed
-                      ),
-                    ),
-                  ],
-                ),
-                onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => SignupScreen(listId: docId))),
-              ),
-            ),
-          );
-        },
-      )
-    ]);
+
+  Widget _buildListSection(BuildContext context, String title, List<DocumentSnapshot> docs, bool showSpotNumber) {
+     if (docs.isEmpty) {
+        return const SizedBox.shrink();
+     }
+     return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+           Padding(
+             padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+             child: Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.black.withAlpha(200))),
+           ),
+           ListView.builder(
+             shrinkWrap: true,
+             physics: NeverScrollableScrollPhysics(),
+             itemCount: docs.length,
+             itemBuilder: (context, index) {
+               final doc = docs[index];
+               final listData = doc.data() as Map<String, dynamic>? ?? {};
+               final String docId = doc.id;
+               String displayStatus = "In Bucket Draw";
+
+               final Timestamp? showTimestamp = listData['date'] as Timestamp?;
+               String formattedDate = '';
+               if (showTimestamp != null) {
+                 formattedDate = DateFormat('EEE, MMM d').format(showTimestamp.toDate());
+               }
+
+               if (showSpotNumber) {
+                  displayStatus = "Unknown Spot";
+                  final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
+                  spotsMap.forEach((key, value) {
+                    if (value is Map && value['userId'] == currentUserId) {
+                      displayStatus = "Spot: $key";
+                    }
+                  });
+               }
+
+               String addressText = listData['address'] ?? 'No Address Provided';
+
+               return FadeInUp(
+                 delay: Duration(milliseconds: 100 * index),
+                 duration: const Duration(milliseconds: 400),
+                 child: Card(
+                   color: Colors.white.withAlpha((255 * 0.9).round()),
+                   elevation: 3, margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                   child: ListTile(
+                     title: Text(
+                        listData['listName'] ?? 'Unnamed List',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                     ),
+                     // --- MODIFIED SUBTITLE TO INCLUDE MAP ICON ---
+                     subtitle: Row(
+                       children: [
+                         Expanded(
+                           child: Text(
+                             addressText,
+                             overflow: TextOverflow.ellipsis,
+                           ),
+                         ),
+                         // Only show map icon if address is not 'No Address Provided' and not empty
+                         if (addressText != 'No Address Provided' && addressText.trim().isNotEmpty)
+                           Padding(
+                             padding: const EdgeInsets.only(left: 8.0),
+                             child: IconButton(
+                               icon: Icon(Icons.directions_outlined, color: Theme.of(context).primaryColor), // Or Icons.map_outlined
+                               iconSize: 22.0,
+                               padding: EdgeInsets.zero,
+                               constraints: BoxConstraints(), // To make the tap area tighter
+                               tooltip: 'Get Directions',
+                               onPressed: () {
+                                 _launchMaps(addressText);
+                               },
+                             ),
+                           ),
+                       ],
+                     ),
+                     trailing: Column(
+                       mainAxisAlignment: MainAxisAlignment.center,
+                       crossAxisAlignment: CrossAxisAlignment.end,
+                       children: <Widget>[
+                         if (formattedDate.isNotEmpty)
+                           Text(
+                             formattedDate,
+                             style: TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w500),
+                           ),
+                         if (formattedDate.isNotEmpty && displayStatus.isNotEmpty)
+                           SizedBox(height: 4.0),
+                         Text(
+                           displayStatus,
+                           style: TextStyle(
+                             fontStyle: !showSpotNumber ? FontStyle.italic : FontStyle.normal,
+                             color: Colors.grey.shade700,
+                             fontSize: 12,
+                           ),
+                         ),
+                       ],
+                     ),
+                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SignupScreen(listId: docId))),
+                   ),
+                 ),
+               );
+             },
+           ),
+        ],
+     );
   }
 
   Widget _buildMySignupsView() {
