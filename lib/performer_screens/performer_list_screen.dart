@@ -163,7 +163,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
       String listId, String listName, int positionIndex) async {
     String body = "";
     if (positionIndex == 0) {
-      body = "You\'re up next!";
+      body = "You're up next!";
     } else if (positionIndex == 1)
       body = "1 performer ahead of you.";
     else
@@ -249,54 +249,71 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   }
 
   Future<void> _launchMaps(String address) async {
-    if (address.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Address is not available.')),
-        );
-      }
-      return;
+  if (address.isEmpty) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Address is not available.')),
+      );
     }
+    return;
+  }
 
-    String query = Uri.encodeComponent(address);
-    Uri? mapUri;
+  // Log the address being used
+  print("Attempting to launch maps for address: '$address'");
+  String query = Uri.encodeComponent(address);
+  print("Encoded query for URI: '$query'");
 
-    if (Platform.isAndroid) {
-      // Prefers Google Maps app if available, otherwise opens in browser
-      mapUri = Uri.parse('geo:0,0?q=$query');
-    } else if (Platform.isIOS) {
-      // Opens Apple Maps
-      mapUri = Uri.parse('maps://maps.apple.com/?q=$query');
-      // Alternative for iOS that might sometimes be more reliable if the above fails,
-      // or if you want to ensure it opens in a browser first then redirects.
-      // mapUri = Uri.parse('http://maps.apple.com/?address=$query');
-    } else {
-      // Generic fallback for web or other platforms
-      mapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
-    }
+  Uri? platformSpecificUri;
+  bool launchedSuccessfully = false;
 
+  if (Platform.isAndroid) {
+    platformSpecificUri = Uri.parse('geo:0,0?q=$query');
+  } else if (Platform.isIOS) {
+    platformSpecificUri = Uri.parse('maps://maps.apple.com/?q=$query');
+  }
+
+  // Try platform-specific URI first
+  if (platformSpecificUri != null) {
     try {
-      if (await canLaunchUrl(mapUri)) {
-        await launchUrl(mapUri);
+      if (await canLaunchUrl(platformSpecificUri)) {
+        print("Attempting to launch platform-specific URI: $platformSpecificUri");
+        await launchUrl(platformSpecificUri);
+        launchedSuccessfully = true;
       } else {
-        // If the preferred map app URI fails, try the generic web Google Maps search
-        // This is a good fallback, especially if a specific map app isn't installed.
-        Uri webMapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
-        if (await canLaunchUrl(webMapUri)) {
-          await launchUrl(webMapUri);
-        } else {
-          throw 'Could not launch $mapUri or web fallback';
-        }
+        print("canLaunchUrl returned false for platform-specific URI: $platformSpecificUri");
       }
     } catch (e) {
-      print('Error launching maps: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open maps app.')),
-        );
-      }
+      print("Error launching platform-specific URI ($platformSpecificUri): $e");
     }
   }
+
+  // If platform-specific launch failed or wasn't applicable, try web fallback
+  if (!launchedSuccessfully) {
+    Uri webMapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+    try {
+      print("Attempting to launch web fallback URI: $webMapUri");
+      // For web, we often don't need to check canLaunchUrl for https if a browser is expected.
+      // But it's safer to keep it.
+      if (await canLaunchUrl(webMapUri)) {
+        await launchUrl(webMapUri, mode: LaunchMode.externalApplication);
+        launchedSuccessfully = true;
+      } else {
+         print("canLaunchUrl returned false for web fallback URI: $webMapUri");
+      }
+    } catch (e) {
+      print("Error launching web fallback URI ($webMapUri): $e");
+    }
+  }
+
+  if (!launchedSuccessfully) {
+    print('Failed to launch any map URI for address: $address');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open maps app or website.')),
+      );
+    }
+  }
+}
 
 
   Widget _buildListSection(BuildContext context, String title, List<DocumentSnapshot> docs, bool showSpotNumber) {
@@ -542,7 +559,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
         stream: _firestore
             .collection('Lists')
             .where('state', isEqualTo: state.toUpperCase())
-            .orderBy('date', descending: true)
+            .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
