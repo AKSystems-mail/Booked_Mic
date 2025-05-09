@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:random_text_reveal/random_text_reveal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:reorderables/reorderables.dart';
+// import 'package:reorderables/reorderables.dart';
 // Import Models and Providers
 import 'package:myapp/providers/firestore_provider.dart';
 import 'package:myapp/providers/timer_service.dart';
@@ -872,32 +872,41 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
 
             return CustomScrollView(
               slivers: <Widget>[
-                SliverToBoxAdapter(child: _buildSectionHeader('Regular Spots')),
-                if (noRegular)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                          child: Center(child: Text('No regular spots defined.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
-                        ),
-                      )
-                    else
-                      ReorderableSliverList(
-                        delegate: ReorderableSliverChildBuilderDelegate(
-                          (BuildContext context, int index) {
-                            final item = _regularSpotItems[index];
-                            return _buildSpotTile(item, isRegular: true, displayIndex: index);
-                          },
-                          childCount: _regularSpotItems.length,
-                        ),
-                        onReorder: _isLoading ? (int o, int n) {} : _onReorderRegularSpots,
-                      ),
+              SliverToBoxAdapter(child: _buildSectionHeader('Regular Spots')),
+              if (noRegular)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                    child: Center(child: Text('No regular spots created.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
+                  ),
+                )
+              else
+                SliverReorderableList(
+                  // key: ValueKey('regular_list_${_regularSpotItems.length}'), // Optional key
+                  itemBuilder: (BuildContext context, int index) {
+                    final item = _regularSpotItems[index];
+                    return _buildSpotTile(item, isRegular: true, displayIndex: index);
+                  },
+                  itemCount: _regularSpotItems.length,
+                  onReorder: _isLoading ? (int o, int n) {} : _onReorderRegularSpots,
+                  // --- Apply the transparent proxyDecorator ---
+                  proxyDecorator: (Widget child, int index, Animation<double> animation) {
+                    // This makes the item being dragged have a transparent background
+                    return Material(
+                      color: Colors.transparent, // Set background to transparent
+                      elevation: 0, // Ensure no accidental elevation from Material
+                      child: child, // Render the original child widget
+                    );
+                  },
+                  // --- End of proxyDecorator ---
+                ),
 
                     SliverToBoxAdapter(child: _buildSectionHeader('Waitlist Spots')),
                     if (noWaitlist)
                        SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                          child: Center(child: Text('No waitlist spots defined.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
+                          child: Center(child: Text('No waitlist spots created.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
                         ),
                       )
                     else
@@ -916,7 +925,7 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
                        SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                          child: Center(child: Text('No bucket spots defined.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
+                          child: Center(child: Text('No bucket spots created.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
                         ),
                       )
                      else
