@@ -1,48 +1,39 @@
 // lib/models/show.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-// Removed unused 'package:flutter/material.dart';
 
 class Show {
   final String id;
   final String showName;
   final DateTime date;
   final String address;
+  final String normalizedAddress; // <<< ADDED
   final String state;
   final double? latitude;
   final double? longitude;
   final int numberOfSpots;
-  // Removed reservedSpots, waitList, bucketNames - assuming handled by spots map logic now
-  // final List<String> reservedSpots;
-  // final List<String> waitList;
-  // final List<String> bucketNames;
-  final bool bucketSpots; // Keep flag if needed for UI logic?
-  final int numberOfWaitlistSpots; // Correct field name
-  final int numberOfBucketSpots; // Correct field name
+  final bool bucketSpots;
+  final int numberOfWaitlistSpots;
+  final int numberOfBucketSpots;
   final DateTime? cutoffDate;
-  // Removed cutoffTime - wasn't being used
-  // final TimeOfDay? cutoffTime;
   final String userId;
-  final Timestamp? createdAt;
-  final Map<String, dynamic> spots; // Use Map
-  final List<String> signedUpUserIds; // Use List<String>
+  final Timestamp? createdAt; // Keep as Timestamp for Firestore interaction
+  final Map<String, dynamic> spots;
+  final List<String> signedUpUserIds;
 
   Show({
     required this.id,
     required this.showName,
     required this.date,
     required this.address,
+    required this.normalizedAddress, // <<< ADDED
     required this.state,
     this.latitude,
     this.longitude,
     required this.numberOfSpots,
-    // required this.reservedSpots,
     required this.bucketSpots,
     required this.numberOfWaitlistSpots,
     required this.numberOfBucketSpots,
-    // required this.waitList,
-    // required this.bucketNames,
     this.cutoffDate,
-    // this.cutoffTime,
     required this.userId,
     this.createdAt,
     required this.spots,
@@ -54,56 +45,67 @@ class Show {
 
     DateTime parsedDate;
     if (data['date'] is Timestamp) {
-       parsedDate = (data['date'] as Timestamp).toDate();
+      parsedDate = (data['date'] as Timestamp).toDate();
+    } else if (data['date'] is String) {
+      // Fallback if date is stored as ISO string (less ideal)
+      parsedDate = DateTime.tryParse(data['date']) ?? DateTime.now();
     } else {
-       parsedDate = DateTime.now();
+      parsedDate = DateTime.now(); // Default if missing or wrong type
     }
+
+    DateTime? parsedCutoffDate;
+    if (data['cutoffDate'] is Timestamp) {
+      parsedCutoffDate = (data['cutoffDate'] as Timestamp).toDate();
+    } else if (data['cutoffDate'] is String) {
+      parsedCutoffDate = DateTime.tryParse(data['cutoffDate']);
+    }
+
 
     return Show(
       id: doc.id,
-      showName: data['listName'] ?? '', // Match Firestore field
+      showName: data['listName'] ?? '', // Matches Firestore field 'listName'
       date: parsedDate,
       address: data['address'] ?? '',
+      normalizedAddress: data['normalizedAddress'] ?? (data['address'] ?? '').trim().toLowerCase(), // <<< ADDED (with fallback)
       state: data['state'] ?? '',
       latitude: (data['latitude'] as num?)?.toDouble(),
       longitude: (data['longitude'] as num?)?.toDouble(),
       numberOfSpots: data['numberOfSpots'] ?? 0,
-      // reservedSpots: List<String>.from(data['reservedSpots'] ?? []),
-      bucketSpots: data['bucketSpots'] ?? false, // Assuming this flag might still be used
-      numberOfWaitlistSpots: data['numberOfWaitlistSpots'] ?? 0, // Match Firestore field
-      numberOfBucketSpots: data['numberOfBucketSpots'] ?? 0, // Match Firestore field
-      // waitList: List<String>.from(data['waitList'] ?? []),
-      // bucketNames: List<String>.from(data['bucketNames'] ?? []),
-      cutoffDate: (data['cutoffDate'] as Timestamp?)?.toDate(),
-      // cutoffTime: parsedTime, // Removed
+      bucketSpots: data['bucketSpots'] ?? false,
+      numberOfWaitlistSpots: data['numberOfWaitlistSpots'] ?? 0,
+      numberOfBucketSpots: data['numberOfBucketSpots'] ?? 0,
+      cutoffDate: parsedCutoffDate,
       userId: data['userId'] ?? '',
       createdAt: data['createdAt'] as Timestamp?,
-      spots: Map<String, dynamic>.from(data['spots'] ?? {}), // Get spots map
-      signedUpUserIds: List<String>.from(data['signedUpUserIds'] ?? []), // Get array
+      spots: Map<String, dynamic>.from(data['spots'] ?? {}),
+      signedUpUserIds: List<String>.from(data['signedUpUserIds'] ?? []),
     );
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    // This map is used when creating/updating a document in Firestore
+    Map<String, dynamic> map = {
+      // 'listId': id, // Usually not needed to store id inside the doc if doc.id is used
       'listName': showName,
-      'date': Timestamp.fromDate(date),
+      'date': Timestamp.fromDate(date), // Convert DateTime to Timestamp for Firestore
       'address': address,
+      'normalizedAddress': normalizedAddress.trim().toLowerCase(), // <<< ADDED & Ensure normalization
       'state': state,
-      if (latitude != null) 'latitude': latitude,
-      if (longitude != null) 'longitude': longitude,
       'numberOfSpots': numberOfSpots,
-      // 'reservedSpots': reservedSpots,
       'bucketSpots': bucketSpots,
       'numberOfWaitlistSpots': numberOfWaitlistSpots,
       'numberOfBucketSpots': numberOfBucketSpots,
-      // 'waitList': waitList,
-      // 'bucketNames': bucketNames,
-      if (cutoffDate != null) 'cutoffDate': Timestamp.fromDate(cutoffDate!),
-      // 'cutoffTime': timeString, // Removed
       'userId': userId,
-      // createdAt is set by server or on create
-      'spots': spots,
-      'signedUpUserIds': signedUpUserIds,
+      'spots': spots, // Should be an empty map {} on creation
+      'signedUpUserIds': signedUpUserIds, // Should be an empty list [] on creation
+      // createdAt is typically set by FieldValue.serverTimestamp() in the service/provider
     };
+
+    if (latitude != null) map['latitude'] = latitude;
+    if (longitude != null) map['longitude'] = longitude;
+    if (cutoffDate != null) map['cutoffDate'] = Timestamp.fromDate(cutoffDate!);
+    // 'createdAt' will be handled by the FirestoreProvider on creation.
+
+    return map;
   }
 }

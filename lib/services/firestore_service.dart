@@ -126,7 +126,6 @@ class FirestoreService {
             batch.delete(doc.reference);
           }
           await batch.commit(); // Commit the batch delete
-          print("Deleted ${snapshot.docs.length} bucket signups for list $listId");
         }
       } while (snapshot.docs.isNotEmpty); // Continue until subcollection is empty
 
