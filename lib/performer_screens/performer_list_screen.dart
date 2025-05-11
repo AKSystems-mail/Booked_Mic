@@ -30,7 +30,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   String? _selectedSearchState;
-
+    static const String _lastSelectedStateKey = 'last_selected_search_state'; // Key for SharedPreferences
   final List<String> usStates = [
     'AL',
     'AK',
@@ -91,6 +91,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLastSelectedState(); // Load on init
   }
 
   @override
@@ -109,43 +110,115 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     );
   }
 
+  Future<void> _loadLastSelectedState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? lastState = prefs.getString(_lastSelectedStateKey);
+    if (lastState != null && mounted) {
+
+    }
+  }
+
+  Future<void> _saveLastSelectedState(String state) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastSelectedStateKey, state);
+  }
+
   Future<void> _showStateSearchDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? previouslySelectedState = prefs.getString(_lastSelectedStateKey);
+
+    // Local state for the dialog's search functionality
+    String searchQuery = '';
+    List<String> filteredStates = List.from(usStates); // Start with all states
+
     final String? result = await showDialog<String>(
-        context: context,
-        builder: (BuildContext context) {
-          final Color primaryColor = Theme.of(context).primaryColor;
-          final Color appBarColor = Colors.blue.shade400;
-          return AlertDialog(
-            backgroundColor: Colors.white.withOpacity(0.95),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            title:
-                Text('Search by State', style: TextStyle(color: primaryColor)),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: MediaQuery.of(context).size.height * 0.6,
-              child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: usStates.length,
-                  itemBuilder: (context, index) {
-                    final state = usStates[index];
-                    return ListTile(
-                        title: Text(state,
-                            style: TextStyle(fontWeight: FontWeight.w500)),
-                        onTap: () => Navigator.of(context).pop(state));
-                  }),
-            ),
-            actions: <Widget>[
-              TextButton(
-                  child: Text('Cancel', style: TextStyle(color: appBarColor)),
-                  onPressed: () => Navigator.of(context).pop())
-            ],
-          );
+      context: context,
+      builder: (BuildContext dialogContext) {
+        // Use StatefulBuilder to allow updating the dialog's content (filtered list)
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // Filter states based on searchQuery
+            if (searchQuery.isEmpty) {
+              filteredStates = List.from(usStates);
+            } else {
+              filteredStates = usStates
+                  .where((s) => s.toLowerCase().contains(searchQuery.toLowerCase()))
+                  .toList();
+            }
+
+            return AlertDialog(
+              backgroundColor: Colors.white.withOpacity(0.98), // Slightly more opaque
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              title: Text('Search State', style: TextStyle(color: Theme.of(context).primaryColor)),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: MediaQuery.of(context).size.height * 0.7, // Increased height a bit
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12.0),
+                      child: TextField(
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Type to search states...',
+                          prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                        ),
+                        onChanged: (value) {
+                          setDialogState(() { // Update dialog state to re-filter
+                            searchQuery = value;
+                          });
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: filteredStates.isEmpty
+                          ? Center(child: Text('No states found for "$searchQuery"'))
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: filteredStates.length,
+                              itemBuilder: (context, index) {
+                                final state = filteredStates[index];
+                                bool isPreviouslySelected = state == previouslySelectedState;
+                                return ListTile(
+                                  title: Text(
+                                    state,
+                                    style: TextStyle(
+                                      fontWeight: isPreviouslySelected ? FontWeight.bold : FontWeight.w500,
+                                      color: isPreviouslySelected ? Theme.of(context).primaryColor : Colors.black87,
+                                    ),
+                                  ),
+                                  tileColor: isPreviouslySelected ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  onTap: () => Navigator.of(dialogContext).pop(state),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null) { // Only update if a state was actually selected
+      if (result != _selectedSearchState) { // And if it's different from current search
+        setState(() {
+          _selectedSearchState = result;
         });
-    if (result != null && result != _selectedSearchState) {
-      setState(() {
-        _selectedSearchState = result;
-      });
+      }
+      await _saveLastSelectedState(result); // Save the newly selected state
     }
   }
 
@@ -259,9 +332,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   }
 
   // Log the address being used
-  print("Attempting to launch maps for address: '$address'");
   String query = Uri.encodeComponent(address);
-  print("Encoded query for URI: '$query'");
 
   Uri? platformSpecificUri;
   bool launchedSuccessfully = false;
@@ -276,14 +347,11 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   if (platformSpecificUri != null) {
     try {
       if (await canLaunchUrl(platformSpecificUri)) {
-        print("Attempting to launch platform-specific URI: $platformSpecificUri");
         await launchUrl(platformSpecificUri);
         launchedSuccessfully = true;
       } else {
-        print("canLaunchUrl returned false for platform-specific URI: $platformSpecificUri");
       }
     } catch (e) {
-      print("Error launching platform-specific URI ($platformSpecificUri): $e");
     }
   }
 
@@ -291,14 +359,12 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   if (!launchedSuccessfully) {
     Uri webMapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
     try {
-      print("Attempting to launch web fallback URI: $webMapUri");
       // For web, we often don't need to check canLaunchUrl for https if a browser is expected.
       // But it's safer to keep it.
       if (await canLaunchUrl(webMapUri)) {
         await launchUrl(webMapUri, mode: LaunchMode.externalApplication);
         launchedSuccessfully = true;
       } else {
-         print("canLaunchUrl returned false for web fallback URI: $webMapUri");
       }
     } catch (e) {
       print("Error launching web fallback URI ($webMapUri): $e");
@@ -306,7 +372,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   }
 
   if (!launchedSuccessfully) {
-    print('Failed to launch any map URI for address: $address');
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open maps app or website.')),
@@ -435,7 +500,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     final onListStream = _firestore
         .collection('Lists')
         .where('signedUpUserIds', arrayContains: currentUserId)
-        .orderBy('date', descending: true)
+        .orderBy('date', descending: false)
         .snapshots();
 
     final bucketSignupsStream = _firestore
@@ -471,7 +536,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                 }
               });
               return _buildListSection(
-                  context, "Lists You\'re On", snapshot.data?.docs ?? [], true);
+                  context, "Lists You're On", snapshot.data?.docs ?? [], true);
             }),
         StreamBuilder<QuerySnapshot>(
             stream: bucketSignupsStream,
@@ -543,11 +608,11 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                       if (dateA == null && dateB == null) return 0;
                       if (dateA == null) return 1;
                       if (dateB == null) return -1;
-                      return dateB.compareTo(dateA);
+                      return dateB.compareTo(dateB);
                     });
 
                     return _buildListSection(
-                        context, "Buckets You\'re In", validListDocs, false);
+                        context, "Buckets You're In", validListDocs, false);
                   });
             }),
       ],

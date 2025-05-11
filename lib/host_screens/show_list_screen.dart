@@ -3,7 +3,6 @@
 import 'dart:async';
 // import 'dart:math'; // Removed unused import
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Keep for FilteringTextInputFormatter
 import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:random_text_reveal/random_text_reveal.dart';
@@ -104,7 +103,6 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
           flashlightService.showLightPromptCallback = _showLightPromptDialog;
           flashlightService.showErrorCallback = _showErrorSnackbar;
         } catch (e) {
-           print("Error setting up flashlight callbacks in initState: $e");
         }
       }
     });
@@ -204,60 +202,218 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
      _bucketSpotItems = tempBucket;
    }
 
-  Future<void> _setTotalTimerDialog() async {
-     if (!mounted) return;
-     final timerService = context.read<TimerService>();
-     int currentMinutes = timerService.totalSeconds ~/ 60;
-     int? newMinutes = await showDialog<int>(
-        context: context,
-        builder: (BuildContext dialogContext) {
-           TextEditingController minController = TextEditingController(text: currentMinutes.toString());
-           return AlertDialog(
-              title: Text("Set Total Timer (Minutes)"),
-              content: TextField(
-                 controller: minController,
-                 autofocus: true,
-                 keyboardType: TextInputType.number,
-                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-               ),
-              actions: [ TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text("Cancel")), TextButton(onPressed: () { int? mins = int.tryParse(minController.text); Navigator.pop(dialogContext, mins); }, child: Text("Set"))],
-           );
-        }
-     );
-     if (newMinutes != null && newMinutes > 0) {
-       await timerService.setTotalSeconds(newMinutes * 60);
-     }
+
+Future<void> _setTotalTimerDialog() async {
+  if (!mounted) return;
+  final timerService = context.read<TimerService>();
+  // Use a local variable for the dialog's state
+  int dialogMinutes = timerService.totalSeconds ~/ 60;
+  if (dialogMinutes == 0 && timerService.totalSeconds > 0) { // Handle case where totalSeconds < 60
+      dialogMinutes = 1; // Default to 1 minute if there's some time but less than a minute
+  } else if (dialogMinutes == 0) {
+      dialogMinutes = 5; // Default for a new timer
   }
 
-  Future<void> _setThresholdDialog() async {
-     if (!mounted) return;
-     final timerService = context.read<TimerService>();
-     int currentSeconds = timerService.lightThresholdSeconds;
-     int? newSeconds = await showDialog<int>(
-        context: context,
-        builder: (BuildContext dialogContext) {
-           TextEditingController secController = TextEditingController(text: currentSeconds.toString());
-           return AlertDialog(
-              title: Text("Set Light Threshold (Seconds)"),
-              content: TextField(
-                 controller: secController,
-                 autofocus: true,
-                 keyboardType: TextInputType.number,
-                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-               ),
-              actions: [ TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text("Cancel")), TextButton(onPressed: () { int? secs = int.tryParse(secController.text); Navigator.pop(dialogContext, secs); }, child: Text("Set"))],
-           );
-        }
-     );
-      if (!mounted) return;
-      if (newSeconds != null) {
-       try {
-           await timerService.setLightThreshold(newSeconds);
-       } catch (e) {
-          _showErrorSnackbar('Failed to set threshold: $e');
-    }
-   }
+
+  final int? resultMinutes = await showDialog<int>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      // Use StatefulBuilder to manage the state within the dialog
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text("Set Length (min)"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  "${dialogMinutes} min",
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
+                ),
+                SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: <Widget>[
+                    IconButton(
+                      icon: Icon(Icons.remove_circle_outline, size: 30),
+                      color: Theme.of(context).colorScheme.secondary,
+                      tooltip: 'Decrease time',
+                      onPressed: () {
+                        if (dialogMinutes > 1) { // Minimum 1 minute
+                          setDialogState(() {
+                            dialogMinutes--;
+                          });
+                        }
+                      },
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: dialogMinutes.toDouble(),
+                        min: 1, // Minimum 1 minute
+                        max: 180, // Max 3 hours, adjust as needed
+                        divisions: 179, // max - min
+                        label: dialogMinutes.toString(),
+                        activeColor: Theme.of(context).colorScheme.primary,
+                        inactiveColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                        onChanged: (double value) {
+                          setDialogState(() {
+                            dialogMinutes = value.round();
+                          });
+                        },
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.add_circle_outline, size: 30),
+                      color: Theme.of(context).colorScheme.secondary,
+                      tooltip: 'Increase time',
+                      onPressed: () {
+                        if (dialogMinutes < 180) { // Max 3 hours
+                          setDialogState(() {
+                            dialogMinutes++;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: Text("Cancel"),
+                onPressed: () => Navigator.of(dialogContext).pop(null), // Return null for cancel
+              ),
+              TextButton(
+                child: Text("Set"),
+                onPressed: () => Navigator.of(dialogContext).pop(dialogMinutes),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  if (resultMinutes != null && resultMinutes > 0) {
+    await timerService.setTotalSeconds(resultMinutes * 60);
   }
+}
+
+
+Future<void> _setThresholdDialog() async {
+  if (!mounted) return;
+  final timerService = context.read<TimerService>();
+  int dialogSeconds = timerService.lightThresholdSeconds;
+  if (dialogSeconds <= 0) {
+    dialogSeconds = 30; // Default threshold
+  }
+
+  // Helper function to format seconds into M:SS or S sec
+  String formatSecondsToMinSec(int totalSeconds) {
+    if (totalSeconds < 0) totalSeconds = 0; // Should not happen with current logic
+    if (totalSeconds < 60) {
+      return "$totalSeconds sec";
+    } else {
+      int minutes = totalSeconds ~/ 60;
+      int seconds = totalSeconds % 60;
+      return "${minutes} min ${seconds.toString().padLeft(2, '0')} sec";
+    }
+  }
+
+  final int? resultSeconds = await showDialog<int>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text("Getting the light at... (sec)"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  formatSecondsToMinSec(dialogSeconds), // <<< USE FORMATTER HERE
+                  style: TextStyle(
+                      fontSize: 24, // Adjusted size for potentially longer text
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: <Widget>[
+                    IconButton(
+                      icon: Icon(Icons.remove_circle_outline, size: 30),
+                      color: Theme.of(context).colorScheme.secondary,
+                      tooltip: 'Decrease threshold',
+                      onPressed: () {
+                        if (dialogSeconds > 5) {
+                          setDialogState(() {
+                            dialogSeconds -= 5;
+                            if (dialogSeconds < 5) dialogSeconds = 5;
+                          });
+                        }
+                      },
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: dialogSeconds.toDouble(),
+                        min: 5,
+                        max: 300, // Max 5 minutes
+                        divisions: (300 - 5) ~/ 5,
+                        label: formatSecondsToMinSec(dialogSeconds), // <<< USE FORMATTER FOR LABEL
+                        activeColor: Theme.of(context).colorScheme.primary,
+                        inactiveColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                        onChanged: (double value) {
+                          setDialogState(() {
+                            dialogSeconds = (value / 5).round() * 5;
+                            if (dialogSeconds < 5) dialogSeconds = 5;
+                            if (dialogSeconds > 300) dialogSeconds = 300;
+                          });
+                        },
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.add_circle_outline, size: 30),
+                      color: Theme.of(context).colorScheme.secondary,
+                      tooltip: 'Increase threshold',
+                      onPressed: () {
+                        if (dialogSeconds < 300) {
+                          setDialogState(() {
+                            dialogSeconds += 5;
+                            if (dialogSeconds > 300) dialogSeconds = 300;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: Text("Cancel"),
+                onPressed: () => Navigator.of(dialogContext).pop(null),
+              ),
+              TextButton(
+                child: Text("Set"),
+                onPressed: () => Navigator.of(dialogContext).pop(dialogSeconds),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  if (resultSeconds != null) {
+    try {
+      await timerService.setLightThreshold(resultSeconds);
+    } catch (e) {
+      if (mounted) _showErrorSnackbar('Failed to set threshold: $e');
+    }
+  }
+}
 
   Future<bool?> _showLightPromptDialog() async {
      if (!mounted) return null;
@@ -511,7 +667,6 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
       _regularSpotItems.insert(newIndex, item);
 
       _updateFirestoreAfterRegularReorder().catchError((e) {
-         print("Firestore reorder failed, UI might be out of sync briefly.");
          // Error snackbar is shown inside _updateFirestoreAfterRegularReorder
       }).whenComplete(() {
         if (mounted) {
@@ -568,7 +723,6 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
       // final provider = context.read<FirestoreProvider>(); // Removed unused variable
       await context.read<FirestoreProvider>().saveReorderedSpots(widget.listId, newSpotsMapForFirestore);
     } catch (e) {
-      print("Error reordering regular spots in Firestore: $e");
       if (mounted) {
         scaffoldMessenger.showSnackBar( // Use captured messenger
           SnackBar(content: Text('Error saving order: ${e.toString()}')),
