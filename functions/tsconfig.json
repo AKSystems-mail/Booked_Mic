@@ -1,14 +1,15 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "NodeNext",
+    "esModuleInterop": true,
+    "moduleResolution": "nodenext",
     "noImplicitReturns": true,
-    "noUnusedLocals": true, // Keep this enabled to catch your own unused variables
+    "noUnusedLocals": true,
     "outDir": "lib",
     "sourceMap": true,
     "strict": true,
-    "target": "es2017", // Or your desired target
-    "skipLibCheck": true, // <-- ADD THIS LINE
-    "resolveJsonModule": true // Often useful for functions
+    "target": "es2021",
+    "skipLibCheck": true
   },
   "compileOnSave": true,
   "include": [

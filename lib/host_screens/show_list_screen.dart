@@ -517,70 +517,103 @@ Future<void> _setThresholdDialog() async {
     }
   }
 
-  Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) async {
-    if (waitlistItemToPromote.isEmpty || waitlistItemToPromote.userId == null) {
-      if (mounted) _showErrorSnackbar('This waitlist spot is empty or has no user.');
-      return;
+Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) async {
+  if (waitlistItemToPromote.isEmpty) { // Check if the spot object itself is an empty placeholder
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This waitlist spot is empty.')),
+      );
     }
-
-    String? targetRegularSpotKey;
-    for (var spot in _regularSpotItems) {
-      if (spot.isEmpty) {
-        targetRegularSpotKey = spot.spotKey;
-        break;
-      }
-    }
-
-    if (targetRegularSpotKey == null) {
-      if (mounted) _showErrorSnackbar('No empty regular spots available.');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      DocumentReference listRef = FirebaseFirestore.instance.collection('Lists').doc(widget.listId);
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        DocumentSnapshot snapshot = await transaction.get(listRef);
-        if (!snapshot.exists) throw Exception("List does not exist!");
-
-        Map<String, dynamic> currentSpots = Map<String, dynamic>.from(
-            (snapshot.data() as Map<String, dynamic>)['spots'] as Map? ?? {});
-
-        if (currentSpots.containsKey(targetRegularSpotKey!) && currentSpots[targetRegularSpotKey] != null) {
-            throw Exception('Target regular spot $targetRegularSpotKey is no longer empty.');
-        }
-        if (!currentSpots.containsKey(waitlistItemToPromote.spotKey) ||
-            currentSpots[waitlistItemToPromote.spotKey]?['userId'] != waitlistItemToPromote.userId) {
-             throw Exception('Waitlist spot ${waitlistItemToPromote.spotKey} data changed unexpectedly.');
-        }
-
-        currentSpots[targetRegularSpotKey] = {
-          'userId': waitlistItemToPromote.userId,
-          'name': waitlistItemToPromote.name,
-          'isOver': false,
-        };
-
-        currentSpots.remove(waitlistItemToPromote.spotKey);
-
-        transaction.update(listRef, {'spots': currentSpots});
-      });
-
+    return;
+  }
+  // Check if there's actually a name to promote
+  if (waitlistItemToPromote.name == null || waitlistItemToPromote.name!.trim().isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${waitlistItemToPromote.name ?? 'Performer'} moved to Regular Spot $targetRegularSpotKey.')),
+          const SnackBar(content: Text('This waitlist spot has no name to promote.')),
         );
       }
-    } catch (e) {
-      if (mounted) {
-        _showErrorSnackbar('Error promoting: ${e.toString()}');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      return;
+  }
+
+  String? targetRegularSpotKey;
+  for (var spot in _regularSpotItems) {
+    if (spot.isEmpty) {
+      targetRegularSpotKey = spot.spotKey;
+      break;
     }
   }
+
+  if (targetRegularSpotKey == null) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No empty regular spots available.')),
+      );
+    }
+    return;
+  }
+
+  setState(() => _isLoading = true);
+
+  try {
+    DocumentReference listRef = FirebaseFirestore.instance.collection('Lists').doc(widget.listId);
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(listRef);
+      if (!snapshot.exists) {
+        throw Exception("List does not exist!");
+      }
+      Map<String, dynamic> currentSpots = Map<String, dynamic>.from(
+          (snapshot.data() as Map<String, dynamic>)['spots'] as Map? ?? {});
+
+      // Data for the new regular spot
+      Map<String, dynamic> newRegularSpotData = {
+        'name': waitlistItemToPromote.name!, // We know name is not null from earlier check
+        'isOver': false, // Default for a newly promoted spot
+      };
+      // Only include userId if it exists for the waitlist item
+      if (waitlistItemToPromote.userId != null) {
+        newRegularSpotData['userId'] = waitlistItemToPromote.userId;
+      }
+
+      currentSpots[targetRegularSpotKey!] = newRegularSpotData;
+
+      // Remove the entry from its original waitlist spot
+      currentSpots.remove(waitlistItemToPromote.spotKey);
+
+      // Also update signedUpUserIds if the promoted user had a userId
+      // This part is tricky: if they were a manual add, they weren't in signedUpUserIds.
+      // If they were a real user on waitlist, they also weren't in the main signedUpUserIds.
+      // When promoted to a regular spot, if they have a userId, they should now be added.
+      Map<String, dynamic> updatePayload = {
+        'spots': currentSpots,
+        'updatedAt': FieldValue.serverTimestamp(), // Good practice
+      };
+
+      if (waitlistItemToPromote.userId != null) {
+        updatePayload['signedUpUserIds'] = FieldValue.arrayUnion([waitlistItemToPromote.userId!]);
+      }
+
+      transaction.update(listRef, updatePayload);
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${waitlistItemToPromote.name ?? 'Performer'} moved to Regular Spot $targetRegularSpotKey.')),
+      );
+    }
+  } catch (e) {
+    print("Error promoting performer: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error promoting: ${e.toString()}')),
+      );
+    }
+  } finally {
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+}
 
   Future<void> _handleBucketDraw(String spotKey) async {
     if (!mounted || (_isDrawingForSpot[spotKey] ?? false) || _isLoading) return;
@@ -682,55 +715,66 @@ Future<void> _setThresholdDialog() async {
 
   Future<void> _updateFirestoreAfterRegularReorder() async {
     Map<String, dynamic> newSpotsMapForFirestore = {};
-    final scaffoldMessenger = ScaffoldMessenger.of(context); // Capture context
+    // final scaffoldMessenger = ScaffoldMessenger.of(context); // Capture context
 
-    try {
-      DocumentSnapshot listSnapshot = await FirebaseFirestore.instance.collection('Lists').doc(widget.listId).get();
-      if (!listSnapshot.exists) throw Exception("List not found for reorder.");
+ try {
+    DocumentSnapshot listSnapshot = await FirebaseFirestore.instance.collection('Lists').doc(widget.listId).get();
+    if (!listSnapshot.exists) throw Exception("List not found for reorder.");
+    
+    Map<String, dynamic> existingFullSpotsMap = Map<String, dynamic>.from(
+        (listSnapshot.data() as Map<String, dynamic>)['spots'] as Map? ?? {});
 
-      Map<String, dynamic> existingFullSpotsMap = Map<String, dynamic>.from(
-          (listSnapshot.data() as Map<String, dynamic>)['spots'] as Map? ?? {});
-
-      existingFullSpotsMap.forEach((key, value) {
-        if (key.startsWith('W') || key.startsWith('B')) {
-          newSpotsMapForFirestore[key] = value;
-        }
-      });
-
-    } catch (e) {
-       if (mounted) {
-         scaffoldMessenger.showSnackBar( // Use captured messenger
-           SnackBar(content: Text('Error preparing update: ${e.toString()}')),
-         );
-       }
-       // No need to set isLoading=false here, caller's whenComplete handles it
-       rethrow; // Rethrow to trigger catchError in caller
-    }
-
-    for (int i = 0; i < _regularSpotItems.length; i++) {
-      final spotItem = _regularSpotItems[i];
-      if (!spotItem.isEmpty && spotItem.userId != null) {
-        String newRegularKey = (i + 1).toString();
-        newSpotsMapForFirestore[newRegularKey] = {
-          'userId': spotItem.userId,
-          'name': spotItem.name,
-          'isOver': spotItem.isOver,
-        };
+    existingFullSpotsMap.forEach((key, value) {
+      if (key.startsWith('W') || key.startsWith('B')) {
+        newSpotsMapForFirestore[key] = value;
       }
-    }
+    });
 
-    try {
-      // final provider = context.read<FirestoreProvider>(); // Removed unused variable
-      await context.read<FirestoreProvider>().saveReorderedSpots(widget.listId, newSpotsMapForFirestore);
-    } catch (e) {
-      if (mounted) {
-        scaffoldMessenger.showSnackBar( // Use captured messenger
-          SnackBar(content: Text('Error saving order: ${e.toString()}')),
-        );
-      }
-      rethrow; // Use rethrow
-    }
+  } catch (e) {
+     print("Error fetching existing spots for reorder: $e");
+     if (mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(
+         SnackBar(content: Text('Error preparing update: ${e.toString()}')),
+       );
+     }
+     rethrow; // Rethrow to be caught by caller's catchError
   }
+
+  // Add regular spots back in the new order
+  for (int i = 0; i < _regularSpotItems.length; i++) {
+    final spotItem = _regularSpotItems[i];
+    // --- MODIFIED CONDITION ---
+    // Include if it's not an empty placeholder AND has a name (even if userId is null)
+    if (!spotItem.isEmpty && spotItem.name != null && spotItem.name!.isNotEmpty) {
+      String newRegularKey = (i + 1).toString(); // Logical 1-based key
+      
+      Map<String, dynamic> spotDataToSave = {
+        'name': spotItem.name,
+        'isOver': spotItem.isOver, // Keep the isOver status
+      };
+      // Only include userId if it exists
+      if (spotItem.userId != null) {
+        spotDataToSave['userId'] = spotItem.userId;
+      }
+      newSpotsMapForFirestore[newRegularKey] = spotDataToSave;
+    }
+    // If spotItem is an empty placeholder, its key is simply omitted, making the spot empty in Firestore.
+  }
+
+  try {
+    // Using your provider method which should update the 'spots' field and 'updatedAt'
+    await context.read<FirestoreProvider>().saveReorderedSpots(widget.listId, newSpotsMapForFirestore);
+    print("Regular spots reordered successfully in Firestore.");
+  } catch (e) {
+    print("Error reordering regular spots in Firestore: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving order: ${e.toString()}')),
+      );
+    }
+    rethrow;
+  }
+}
 
   Widget _buildSectionHeader(String title) {
     return Padding(
