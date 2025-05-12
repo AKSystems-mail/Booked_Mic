@@ -7,6 +7,7 @@ import 'package:animate_do/animate_do.dart';
 import 'package:provider/provider.dart';
 import 'package:myapp/providers/firestore_provider.dart';
 import 'package:myapp/models/show.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 // Removed collection import as MapEquality is not used
 
 // Define SpotType enum if not globally available
@@ -145,79 +146,63 @@ class _SignupScreenState extends State<SignupScreen> {
       });
     }
 
-    Future<void> _confirmSelection() async {
-      if (_selectedSpotKey == null ||
-          _performerStageName == null ||
-          _performerId == null ||
-          _isProcessing ||
-          !mounted) {
-        return;
-      }
-      setState(() {
-        _isProcessing = true;
+  // --- MODIFIED: _confirmSelection to call Cloud Function ---
+  Future<void> _confirmSelection() async {
+    if (_selectedSpotKey == null ||
+        // _performerStageName == null, // Cloud Function will fetch this
+        _performerId == null ||
+        _isProcessing ||
+        !mounted) {
+      return;
+    }
+    setState(() {
+      _isProcessing = true;
+    });
+
+    // No need to read FirestoreProvider here for this specific action anymore
+    // final firestoreProvider = context.read<FirestoreProvider>();
+    // No need for listRef for direct transaction anymore
+    // final listRef = _firestore.collection('Lists').doc(widget.listId);
+
+    final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('manageSpotSignup');
+    try {
+      print("Calling manageSpotSignup (signup) for spot: ${_selectedSpotKey!} on list: ${widget.listId}");
+      final HttpsCallableResult result = await callable.call<Map<String, dynamic>>({
+        'listId': widget.listId,
+        'spotKey': _selectedSpotKey!,
+        'action': 'signup',
+        // Performer stage name will be fetched by the Cloud Function from the user's profile
       });
-      final firestoreProvider = context.read<FirestoreProvider>();
-      final listRef = _firestore.collection('Lists').doc(widget.listId);
 
-      try {
-        // Check bucket status before transaction
-        final bool isInBucket = await firestoreProvider.isUserInBucket(
-            widget.listId, _performerId!);
-        if (isInBucket) {
-          throw Exception("You are already on the bucket list.");
-        }
-
-        await _firestore.runTransaction((transaction) async {
-          DocumentSnapshot snapshot = await transaction.get(listRef);
-          if (!snapshot.exists) throw Exception("List does not exist.");
-          Map<String, dynamic> listData =
-              snapshot.data() as Map<String, dynamic>? ?? {};
-          Map<String, dynamic> spots =
-              Map<String, dynamic>.from(listData['spots'] ?? {});
-          List<String> signedUpIds =
-              List<String>.from(listData['signedUpUserIds'] ?? []);
-
-          if (spots.containsKey(_selectedSpotKey!)) {
-            throw Exception("Spot not available");
-          }
-          // Check main list signup status again inside transaction for safety
-          if (signedUpIds.contains(_performerId!)) {
-            throw Exception(
-                "You are already signed up for a spot on this list.");
-          }
-
-          spots[_selectedSpotKey!] = {
-            'name': _performerStageName!,
-            'userId': _performerId!
-          };
-          transaction.update(listRef, {
-            'spots': spots,
-            'signedUpUserIds': FieldValue.arrayUnion([_performerId!])
-          });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(result.data['message'] ?? 'Signed up successfully!'),
+            backgroundColor: Colors.green));
+        Navigator.of(context).pop(); // Go back or to list screen
+      }
+    } on FirebaseFunctionsException catch (e) {
+      print("Cloud function error (signup): Code: ${e.code}, Message: ${e.message}, Details: ${e.details}");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e.message ?? 'Failed to sign up. ${e.details ?? ''}'),
+            backgroundColor: Colors.red));
+        _cancelSelection(); // Clear selected spot on error
+      }
+    } catch (e) {
+      print("Generic error calling signup cloud function: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('An unexpected error occurred during signup.'),
+            backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
         });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Signed up for spot $_selectedSpotKey!'),
-              backgroundColor: Colors.green));
-          Navigator.of(context).pop();
-        }
-      } catch (e) {
-        // print("Error confirming selection: $e"); // Commented out
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(e.toString().replaceFirst("Exception: ", "")),
-              backgroundColor: Colors.red)); // Show cleaner message
-          _cancelSelection();
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isProcessing = false;
-          });
-        }
       }
     }
+  }
 
     // --- Bucket Join/Leave Logic ---
     Future<void> _toggleBucketSignup() async {
@@ -318,47 +303,58 @@ class _SignupScreenState extends State<SignupScreen> {
       );
     }
 
-    Future<void> _removeSignup(String spotKey) async {
-      if (_isProcessing || _performerId == null || !mounted) {
-        return; // Check regular processing flag
-      }
+  // --- MODIFIED: _removeSignup to call Cloud Function ---
+  Future<void> _removeSignup(String spotKey) async {
+    if (_isProcessing || _performerId == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _isProcessing = true;
+    });
 
-      // --- Use _isProcessing flag ---
-      setState(() {
-        _isProcessing = true;
+    // No need for FirestoreProvider here for this action
+    // final firestoreProvider = context.read<FirestoreProvider>();
+    print("Attempting to remove signup via Cloud Function for spotKey: $spotKey by user: $_performerId");
+
+    final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('manageSpotSignup');
+    try {
+      final HttpsCallableResult result = await callable.call<Map<String, dynamic>>({
+        'listId': widget.listId,
+        'spotKey': spotKey,
+        'action': 'remove',
       });
-      // --- End Use ---
 
-      final firestoreProvider = context.read<FirestoreProvider>();
-      print(
-          "Attempting to remove signup for spotKey: $spotKey by user: $_performerId"); // Logging
-
-      try {
-        await firestoreProvider.removePerformerFromSpot(widget.listId, spotKey);
-
-        // Check mounted before showing SnackBar
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Removed from spot $spotKey'),
-              backgroundColor: Colors.orange));
-        }
-        // Clear selection if the removed spot was the selected one (unlikely in dismiss flow)
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(result.data['message'] ?? 'Successfully removed from spot.'),
+            backgroundColor: Colors.orange));
         if (_selectedSpotKey == spotKey) _cancelSelection();
-      } catch (e) {
-        print("Error removing signup via provider: $e"); // Logging
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Error removing signup: $e'),
-              backgroundColor: Colors.red));
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isProcessing = false;
-          });
-        }
+        // The StreamBuilder on the previous screen (PerformerListScreen) or this screen
+        // will handle UI refresh based on Firestore data changes.
+        // If this screen should pop after removal, add Navigator.of(context).pop();
+      }
+    } on FirebaseFunctionsException catch (e) {
+      print("Cloud function error (remove): Code: ${e.code}, Message: ${e.message}, Details: ${e.details}");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e.message ?? 'Failed to remove signup. ${e.details ?? ''}'),
+            backgroundColor: Colors.red));
+      }
+    } catch (e) {
+      print("Generic error calling removal cloud function: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('An unexpected error occurred during removal.'),
+            backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
       }
     }
+  }
         Widget _buildListContent(Show showData, bool isSignedUpOnMainList) {
         List<Widget> listItems = [];
         int overallIndex = 0;
