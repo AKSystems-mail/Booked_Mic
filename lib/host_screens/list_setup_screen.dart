@@ -34,6 +34,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   String? _selectedStateAbbr;
   double? _selectedLat;
   double? _selectedLng;
+  bool _isListSearchable = true;
 
   DateTime? _selectedDate;
   bool _isLoading = false;
@@ -230,6 +231,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
         userId: user.uid,
         spots: {},
         signedUpUserIds: [],
+        isSearchable: _isListSearchable, // Pass the state variable
         // createdAt will be handled by FirestoreProvider or Firestore (e.g. FieldValue.serverTimestamp())
       );
 
@@ -409,6 +411,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                         trailing: Icon(Icons.arrow_drop_down,
                             color: Colors.grey.shade700)))),
             const SizedBox(height: 24),
+
             // ... (Number TextFields)
             FadeInDown(
                 duration: const Duration(milliseconds: 800),
@@ -427,7 +430,8 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                 child: _buildNumberTextField(
                     controller: _bucketController,
                     label: 'Number of Bucket Spots')),
-            const SizedBox(height: 24), // Space before error message
+            const SizedBox(height: 24),
+             // Space before error message
 
             // --- ERROR MESSAGE DISPLAY ---
             if (_errorMessage != null)
@@ -442,7 +446,28 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                 ),
               ),
             SizedBox(height: _errorMessage != null ? 12 : 0), // Space after error message
-
+            FadeInDown( // Or your preferred animation
+  duration: const Duration(milliseconds: 1000), // Adjust timing
+  child: SwitchListTile(
+    title: Text('Searchable by Performers', style: TextStyle(color: labelColor)), // Assuming labelColor is defined
+    subtitle: Text(
+      _isListSearchable ? 'This list will appear in searches.' : 'Only accessible via QR code (Show up, go up)',
+      style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+    ),
+    value: _isListSearchable,
+    onChanged: (bool value) {
+      setState(() {
+        _isListSearchable = value;
+      });
+    },
+    activeColor: Theme.of(context).primaryColor,
+    secondary: Icon(Icons.search, color: Colors.grey.shade700),
+    contentPadding: EdgeInsets.symmetric(horizontal: 8), // Adjust padding
+    tileColor: Colors.white.withAlpha((255 * 0.85).round()), // Optional background
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), // Optional shape
+  ),
+),
+const SizedBox(height: 32), // Before the button
             // ... (Loading Indicator or Create Button)
             _isLoading
                 ? Center(child: CircularProgressIndicator(color: buttonColor))
