@@ -501,7 +501,7 @@ const SizedBox(height: 32), // Before the button
                                   color: (_isSaving || _isResetting)
                                       ? Colors.grey // Icon color when disabled
                                       : resetButtonTextColor), // Icon color when enabled
-                              label: Text('Reset List Spots', // Changed label
+                              label: Text('Clear List', // Changed label
                                   style: TextStyle(
                                       color: (_isSaving || _isResetting)
                                           ? Colors.grey // Text color when disabled
