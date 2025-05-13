@@ -41,6 +41,7 @@ class _EditListScreenState extends State<EditListScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isResetting = false;
+  bool _isListSearchable = true;
 
   final String googleApiKey =
       dotenv.env['GOOGLE_MAPS_API_KEY'] ?? 'MISSING_API_KEY';
@@ -445,6 +446,29 @@ class _EditListScreenState extends State<EditListScreen> {
                                 child: _buildNumberTextField(
                                     controller: _bucketController,
                                     label: 'Number of Bucket Spots')),
+                            const SizedBox(height: 16),
+FadeInDown( // Or your preferred animation
+  duration: const Duration(milliseconds: 1000), // Adjust timing
+  child: SwitchListTile(
+    title: Text('Searchable by Performers', style: TextStyle(color: labelColor)), // Assuming labelColor is defined
+    subtitle: Text(
+      _isListSearchable ? 'This list will appear in searches.' : 'Only accessible via QR code (Show up, go up)',
+      style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+    ),
+    value: _isListSearchable,
+    onChanged: (bool value) {
+      setState(() {
+        _isListSearchable = value;
+      });
+    },
+    activeColor: Theme.of(context).primaryColor,
+    secondary: Icon(Icons.search, color: Colors.grey.shade700),
+    contentPadding: EdgeInsets.symmetric(horizontal: 8), // Adjust padding
+    tileColor: Colors.white.withAlpha((255 * 0.85).round()), // Optional background
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), // Optional shape
+  ),
+),
+const SizedBox(height: 32), // Before the button
                             const SizedBox(height: 32),
                             ElevatedButton(
                               onPressed: (_isSaving || _isResetting)

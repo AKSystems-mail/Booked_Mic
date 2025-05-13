@@ -18,6 +18,8 @@ import '../../role_selection_screen.dart';
 import 'signup_screen.dart';
 import '../../registration_screen.dart';
 
+// bool _isListSearchable = true;
+
 class PerformerListScreen extends StatefulWidget {
   PerformerListScreen({Key? key}) : super(key: key);
 
@@ -624,6 +626,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
         stream: _firestore
             .collection('Lists')
             .where('state', isEqualTo: state.toUpperCase())
+            .where('isSearchable', isEqualTo: true)
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {

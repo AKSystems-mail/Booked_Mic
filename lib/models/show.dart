@@ -19,6 +19,7 @@ class Show {
   final Timestamp? createdAt; // Keep as Timestamp for Firestore interaction
   final Map<String, dynamic> spots;
   final List<String> signedUpUserIds;
+  final bool isSearchable;
 
   Show({
     required this.id,
@@ -38,6 +39,7 @@ class Show {
     this.createdAt,
     required this.spots,
     required this.signedUpUserIds,
+    this.isSearchable = true,
   });
 
   factory Show.fromFirestore(DocumentSnapshot doc) {
@@ -79,6 +81,7 @@ class Show {
       createdAt: data['createdAt'] as Timestamp?,
       spots: Map<String, dynamic>.from(data['spots'] ?? {}),
       signedUpUserIds: List<String>.from(data['signedUpUserIds'] ?? []),
+      isSearchable: data['isSearchable'] ?? true,
     );
   }
 
@@ -97,7 +100,9 @@ class Show {
       'numberOfBucketSpots': numberOfBucketSpots,
       'userId': userId,
       'spots': spots, // Should be an empty map {} on creation
-      'signedUpUserIds': signedUpUserIds, // Should be an empty list [] on creation
+      'signedUpUserIds': signedUpUserIds,
+      'isSearchable': isSearchable,
+       // Should be an empty list [] on creation
       // createdAt is typically set by FieldValue.serverTimestamp() in the service/provider
     };
 
