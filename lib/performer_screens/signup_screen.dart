@@ -166,7 +166,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
     final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('manageSpotSignup');
     try {
-      print("Calling manageSpotSignup (signup) for spot: ${_selectedSpotKey!} on list: ${widget.listId}");
       final HttpsCallableResult result = await callable.call<Map<String, dynamic>>({
         'listId': widget.listId,
         'spotKey': _selectedSpotKey!,
@@ -181,7 +180,6 @@ class _SignupScreenState extends State<SignupScreen> {
         Navigator.of(context).pop(); // Go back or to list screen
       }
     } on FirebaseFunctionsException catch (e) {
-      print("Cloud function error (signup): Code: ${e.code}, Message: ${e.message}, Details: ${e.details}");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(e.message ?? 'Failed to sign up. ${e.details ?? ''}'),
@@ -189,7 +187,6 @@ class _SignupScreenState extends State<SignupScreen> {
         _cancelSelection(); // Clear selected spot on error
       }
     } catch (e) {
-      print("Generic error calling signup cloud function: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('An unexpected error occurred during signup.'),
@@ -314,7 +311,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
     // No need for FirestoreProvider here for this action
     // final firestoreProvider = context.read<FirestoreProvider>();
-    print("Attempting to remove signup via Cloud Function for spotKey: $spotKey by user: $_performerId");
 
     final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('manageSpotSignup');
     try {
@@ -334,14 +330,12 @@ class _SignupScreenState extends State<SignupScreen> {
         // If this screen should pop after removal, add Navigator.of(context).pop();
       }
     } on FirebaseFunctionsException catch (e) {
-      print("Cloud function error (remove): Code: ${e.code}, Message: ${e.message}, Details: ${e.details}");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(e.message ?? 'Failed to remove signup. ${e.details ?? ''}'),
             backgroundColor: Colors.red));
       }
     } catch (e) {
-      print("Generic error calling removal cloud function: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('An unexpected error occurred during removal.'),
