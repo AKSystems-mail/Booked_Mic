@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:random_text_reveal/random_text_reveal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 // import 'package:reorderables/reorderables.dart';
 // Import Models and Providers
 import 'package:myapp/providers/firestore_provider.dart';
@@ -625,8 +626,9 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
     setState(() {
       _isDrawingForSpot[spotKey] = true;
       _drawnSpotNameForAnimation[spotKey] = "Picking...";
-      _isLoading = true;
-    });
+    _drawnSpotNameForAnimation[spotKey] = null; // Clear any previously drawn name for this spot
+    _isLoading = true;
+  });
 
     await WidgetsBinding.instance.endOfFrame;
     _revealControllerKeys[spotKey]?.currentState?.play();
@@ -843,17 +845,17 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
       }
       titleWidget = RandomTextReveal(
         key: _revealControllerKeys[item.spotKey],
-        text: _drawnSpotNameForAnimation[item.spotKey] ?? "Picking...",
+        text: _drawnSpotNameForAnimation[item.spotKey] ?? "...",
         duration: const Duration(seconds: 2), // Adjusted duration from previous version
         style: TextStyle(
             color: Colors.yellow.shade300, // Standout color for revealed name
             fontWeight: FontWeight.bold,
             fontSize: 16),
         curve: Curves.fastOutSlowIn,
-        randomString: "AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz",
+        randomString: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
         onFinished: () {
           if (mounted && (_isDrawingForSpot[item.spotKey] ?? false)) {
-            Future.delayed(Duration(milliseconds: 300), () {
+            Future.delayed(Duration(milliseconds: 3000), () {
               if (mounted) {
                 setState(() {
                   _isDrawingForSpot[item.spotKey] = false;
