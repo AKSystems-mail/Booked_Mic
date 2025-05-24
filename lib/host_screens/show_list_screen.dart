@@ -1,15 +1,13 @@
 // lib/host_screens/show_list_screen.dart
 
 import 'dart:async';
-// import 'dart:math'; // Removed unused import
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:random_text_reveal/random_text_reveal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// import 'package:reorderables/reorderables.dart';
-// Import Models and Providers
+
 import 'package:myapp/providers/firestore_provider.dart';
 import 'package:myapp/providers/timer_service.dart';
 import 'package:myapp/providers/flashlight_service.dart';
@@ -898,10 +896,8 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
     );
 
     // Logic for Dismissible (copied from your provided code, assuming it's what you want)
-    if ((item.category == SpotCategory.regular || item.category == SpotCategory.waitlist) &&
-        !item.isEmpty &&
-        !item.isOver &&
-        item.userId != null) {
+      if (!item.isEmpty && !item.isOver && (item.name != null && item.name!.isNotEmpty)) {
+
       return Dismissible(
         key: item.itemKey, // Use the unique key from SpotDisplayData
         direction: DismissDirection.endToStart,

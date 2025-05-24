@@ -7,6 +7,9 @@
   packages = [
     pkgs.jdk17
     pkgs.unzip
+    pkgs.sudo
+    pkgs.ruby_3_3
+    pkgs.rubyPackages.cocoapods
   ];
   # Sets environment variables in the workspace
   env = {};
