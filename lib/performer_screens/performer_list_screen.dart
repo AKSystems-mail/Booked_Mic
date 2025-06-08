@@ -1,6 +1,7 @@
 // lib/pages/performer_screens/performer_list_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -234,41 +235,65 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     }
   }
 
-  Future<void> _showPositionNotification(
-      String listId, String listName, int positionIndex) async {
-    String body = "";
-    if (positionIndex == 0) {
+  // --- REPLACE your old _showPositionNotification with this new one ---
+  Future<void> _showCustomPositionNotification(
+      String listId, String listName, int currentPositionIndex, int totalActivePerformers) async {
+    if (!mounted) return;
+
+    String title = 'Spot Update: $listName';
+    String body = '';
+    bool playHapticFeedback = false;
+
+    if (currentPositionIndex == 0) { // 0-based index: 0 means "up next"
       body = "You're up next!";
-    } else if (positionIndex == 1)
-      body = "1 performer ahead of you.";
-    else
-      body = "$positionIndex performers ahead of you.";
+      playHapticFeedback = true;
+    } else if (currentPositionIndex == 1) {
+      body = "There is 1 performer ahead of you.";
+    } else if (currentPositionIndex > 1) {
+      body = "There are $currentPositionIndex performers ahead of you.";
+    } else {
+      // currentPositionIndex is -1 (not in active list) or something unexpected.
+      // You might want a notification if they are dropped from the active list,
+      // or just return if no notification is needed for this case.
+      // For now, let's assume if currentPositionIndex is not >= 0, no "position" notification.
+      return;
+    }
 
     try {
       await AwesomeNotifications().createNotification(
         content: NotificationContent(
-          id: listId.hashCode,
+          id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch, // More unique ID
           channelKey: 'spot_updates_channel',
-          title: 'Update: $listName',
+          title: title,
           body: body,
-          payload: {'listId': listId},
+          payload: {'listId': listId, 'spot': (currentPositionIndex + 1).toString()},
           notificationLayout: NotificationLayout.Default,
+        // locked: playHapticFeedback, // Optional: if you want "up next" to be sticky
+        // autoDismissible: !playHapticFeedback, // Optional
         ),
       );
+
+    if (playHapticFeedback && mounted) {
+      HapticFeedback.heavyImpact();
+    }
     } catch (e) {
-      // Handle error or log
+      print("Error showing custom position notification: $e");
     }
   }
 
 
-
+  // --- MODIFIED _updateAndNotifyPositions ---
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs) {
     if (!mounted || currentUserId == null) return;
     final today = DateTime.now();
     final Map<String, int?> currentPositions = {};
+    // final Map<String, String> listIdToNameMap = {}; // Not strictly needed if passing listName directly
+
     for (var doc in docs) {
       final listData = doc.data() as Map<String, dynamic>? ?? {};
       final String listId = doc.id;
+      final String listName = listData['listName'] ?? 'Unnamed List'; // Get list name
+
       final Timestamp? showTimestamp = listData['date'] as Timestamp?;
       if (showTimestamp != null) {
         final showDate = showTimestamp.toDate();
@@ -278,47 +303,67 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
           final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
           final numRegular = (listData['numberOfSpots'] ?? 0) as int;
           final numWaitlist = (listData['numberOfWaitlistSpots'] ?? 0) as int;
-          final List<String> activePerformers = [];
+          
+          List<String> activePerformers = [];
 
+          // Helper to check spot and add to activePerformers
+          // This local helper is fine.
           checkSpot(String key) {
             if (spotsMap.containsKey(key)) {
               final d = spotsMap[key];
               if (d is Map && d['userId'] != null && !(d['isOver'] == true)) {
-                activePerformers.add(d['userId']);
+                activePerformers.add(d['userId'] as String);
               }
             }
           }
 
+          // Build activePerformers list in order
           for (int i = 1; i <= numRegular; i++) {
             checkSpot(i.toString());
           }
           for (int i = 1; i <= numWaitlist; i++) {
             checkSpot("W$i");
           }
-          final currentPositionIndex = activePerformers.indexOf(currentUserId!);
-          currentPositions[listId] = currentPositionIndex;
-          if (currentPositionIndex != -1) {
-            final lastPosition = _lastNotifiedPositionNotifier.value[listId];
-            if (lastPosition == null || lastPosition != currentPositionIndex) {
-              final String listName = listData['listName'] ?? 'Unnamed List';
-              _showPositionNotification(listId, listName, currentPositionIndex);
+          // --- End building activePerformers ---
+
+          final int currentPositionIndex = activePerformers.indexOf(currentUserId!); // 0-based
+
+          currentPositions[listId] = currentPositionIndex; // Store 0-based index
+
+          if (currentPositionIndex != -1) { // User is in the active list
+            final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
+
+            if (lastNotifiedPosition == null || lastNotifiedPosition != currentPositionIndex) {
+              // Position has changed or it's the first notification for this list today
+              _showCustomPositionNotification( // <<< CALL THE NEW FUNCTION
+                  listId,
+                  listName,
+                  currentPositionIndex, // This is the number of people ahead (0 means next)
+                  activePerformers.length);
             }
           }
         }
       }
     }
-    final Map<String, int?> nextNotifierValue =
-        Map.from(_lastNotifiedPositionNotifier.value);
+
+    // Update _lastNotifiedPositionNotifier
+    final Map<String, int?> nextNotifierValue = Map.from(_lastNotifiedPositionNotifier.value);
     currentPositions.forEach((listId, position) {
-      nextNotifierValue[listId] = position;
+      if (position != -1) { // Only store valid positions
+        nextNotifierValue[listId] = position;
+      } else { // User is no longer in the active list for this listId
+        nextNotifierValue.remove(listId);
+      }
     });
+    // Also remove any lists from notifier that are no longer in `docs` (e.g., user left list entirely)
+    List<String> currentListIdsInDocs = docs.map((d) => d.id).toList();
     _lastNotifiedPositionNotifier.value.keys
-        .where((id) => !currentPositions.containsKey(id))
+        .where((id) => !currentListIdsInDocs.contains(id))
         .toList()
         .forEach(nextNotifierValue.remove);
 
-    if (!const MapEquality()
-        .equals(_lastNotifiedPositionNotifier.value, nextNotifierValue)) {
+
+    if (!const MapEquality().equals(_lastNotifiedPositionNotifier.value, nextNotifierValue)) {
       _lastNotifiedPositionNotifier.value = nextNotifierValue;
     }
   }
