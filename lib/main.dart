@@ -3,15 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// Import providers
 import 'package:provider/provider.dart';
 import 'package:myapp/providers/firestore_provider.dart';
-// Import new provider
-// Import new provider
 import 'package:myapp/services/settings_service.dart'; // Import new service
 // --- Import Awesome Notifications ---
 import 'package:awesome_notifications/awesome_notifications.dart';
-// --- End Import ---
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // Import your screen widgets
@@ -20,9 +16,6 @@ import 'registration_screen.dart'; // Keep imports for routes/AuthWrapper
 import 'role_selection_screen.dart';
 import 'host_screens/created_lists_screen.dart';
 import 'performer_screens/performer_list_screen.dart';
-
-// --- REMOVED flutter_local_notifications instance ---
-// final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
