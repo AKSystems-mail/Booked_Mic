@@ -235,51 +235,54 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     }
   }
 
-  // --- REPLACE your old _showPositionNotification with this new one ---
-  Future<void> _showCustomPositionNotification(
-      String listId, String listName, int currentPositionIndex, int totalActivePerformers) async {
-    if (!mounted) return;
+// --- REPLACE your old _showPositionNotification with this new one ---
+Future<void> _showCustomPositionNotification(
+    String listId, String listName, int currentPositionIndex, int totalActivePerformers) async {
+  if (!mounted) return;
 
-    String title = 'Spot Update: $listName';
-    String body = '';
-    bool playHapticFeedback = false;
+  String title = 'Spot Update: $listName';
+  String body = '';
+  bool playHapticFeedback = false;
 
-    if (currentPositionIndex == 0) { // 0-based index: 0 means "up next"
-      body = "You're up next!";
-      playHapticFeedback = true;
-    } else if (currentPositionIndex == 1) {
-      body = "There is 1 performer ahead of you.";
-    } else if (currentPositionIndex > 1) {
-      body = "There are $currentPositionIndex performers ahead of you.";
-    } else {
-      // currentPositionIndex is -1 (not in active list) or something unexpected.
-      // You might want a notification if they are dropped from the active list,
-      // or just return if no notification is needed for this case.
-      // For now, let's assume if currentPositionIndex is not >= 0, no "position" notification.
-      return;
-    }
+  if (currentPositionIndex == 0) { // 0-based index: 0 means "up next"
+    body = "You're up next!";
+    playHapticFeedback = true;
+  } else if (currentPositionIndex == 1) {
+    body = "There is 1 performer ahead of you.";
+  } else if (currentPositionIndex > 1) {
+    body = "There are $currentPositionIndex performers ahead of you.";
+  } else {
+    // currentPositionIndex is -1 (not in active list) or something unexpected.
+    // You might want a notification if they are dropped from the active list,
+    // or just return if no notification is needed for this case.
+    // For now, let's assume if currentPositionIndex is not >= 0, no "position" notification.
+    return;
+  }
 
-    try {
-      await AwesomeNotifications().createNotification(
-        content: NotificationContent(
-          id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch, // More unique ID
-          channelKey: 'spot_updates_channel',
-          title: title,
-          body: body,
-          payload: {'listId': listId, 'spot': (currentPositionIndex + 1).toString()},
-          notificationLayout: NotificationLayout.Default,
-        // locked: playHapticFeedback, // Optional: if you want "up next" to be sticky
-        // autoDismissible: !playHapticFeedback, // Optional
-        ),
-      );
+  try {
+    await AwesomeNotifications().createNotification(
+      content: NotificationContent(
+        id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch, // More unique ID
+        channelKey: 'spot_updates_channel',
+        title: title,
+        body: body,
+        payload: {'listId': listId, 'spot': (currentPositionIndex + 1).toString()},
+        notificationLayout: NotificationLayout.Default,
+        locked: playHapticFeedback, // Optional: if you want "up next" to be sticky
+        autoDismissible: !playHapticFeedback, // Optional
+      ),
+    );
 
     if (playHapticFeedback && mounted) {
       HapticFeedback.heavyImpact();
     }
-    } catch (e) {
-      print("Error showing custom position notification: $e");
-    }
+  } catch (e) {
+    // The print statement that was here has been removed.
+    // It's generally good practice to log errors to a service like
+    // Firebase Crashlytics or Sentry in a production app, but for now,
+    // removing the print statement is sufficient.
   }
+}
 
 
   // --- MODIFIED _updateAndNotifyPositions ---
