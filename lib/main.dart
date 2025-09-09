@@ -52,7 +52,6 @@ Future<void> main() async {
         channelGroupKey: 'basic_channel_group',
         channelGroupName: 'Basic group')
     ],
-    debug: true, // Enable debug logs during development
   );
 
   // Set up listeners for notification actions (important for handling taps)
