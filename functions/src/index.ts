@@ -1,176 +1,65 @@
-// Import v2 specific modules
-import {onCall, HttpsError} from "firebase-functions/v2/https";
-import {logger} from "firebase-functions/v2"; // v2 logger
+import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 
-// Initialize Firebase Admin SDK ONCE
-if (admin.apps.length === 0) {
-  admin.initializeApp();
-}
-const db = admin.firestore();
+// Initialize the Firebase Admin SDK
+admin.initializeApp();
 
-interface ManageSpotSignupData {
-  listId: string;
-  spotKey: string;
-  action: "signup" | "remove";
-}
-
-export const manageSpotSignup = onCall(
-  {
-    // region: 'us-central1', // Example option
-    // enforceAppCheck: true, // Recommended for production
-  },
-  async (request) => {
+/**
+ * A callable Cloud Function to find a user by their email address.
+ *
+ * @param {functions.https.CallableRequest<{email: string}>} request The
+ * request object from the client.
+ * @returns {Promise<{uid: string, stageName: string} | null>} A promise that
+ * resolves with the user's UID and stageName if found, or null if not found.
+ */
+export const findUserByEmail = functions.https.onCall(
+  async (request: functions.https.CallableRequest<{email: string}>):
+  Promise<{uid: string, stageName: string} | null> => {
+    // 1. Security Check
     if (!request.auth) {
-      logger.error("Authentication failed: No auth context.");
-      throw new HttpsError(
-        "unauthenticated",
-        "The function must be called while authenticated."
-      );
-    }
-    const performerUid = request.auth.uid;
-    const data = request.data as ManageSpotSignupData;
-    const {listId, spotKey, action} = data;
-
-    if (!listId || !spotKey || !action) {
-      logger.error("Invalid argument: Missing parameters.", {data});
-      throw new HttpsError(
-        "invalid-argument",
-        "Missing required parameters: listId, spotKey, or action."
-      );
-    }
-    if (action !== "signup" && action !== "remove") {
-      logger.error("Invalid argument: Invalid action.", {action});
-      throw new HttpsError(
-        "invalid-argument",
-        "Invalid action. Must be 'signup' or 'remove'."
+      throw new functions.https.HttpsError(
+          "unauthenticated",
+          "The function must be called while authenticated.",
       );
     }
 
-    const listDocRef = db.collection("Lists").doc(listId);
-    const userProfileRef = db.collection("users").doc(performerUid);
+    // 2. Input Validation
+    const email = request.data.email;
+    if (!email || typeof email !== "string") {
+      throw new functions.https.HttpsError(
+          "invalid-argument",
+          "The function must be called with a valid 'email' argument.",
+      );
+    }
 
     try {
-      await db.runTransaction(async (transaction) => {
-        const listDocSnapshot = await transaction.get(listDocRef);
-        const userProfileSnapshot = await transaction.get(userProfileRef);
+      // 3. Find the user in Firebase Authentication to get their UID.
+      const userRecord = await admin.auth().getUserByEmail(email);
 
-        if (!listDocSnapshot.exists) {
-          logger.warn(`List not found: ${listId}`);
-          throw new HttpsError(
-            "not-found",
-            `List with ID ${listId} not found.`
-          );
-        }
+      // --- THIS IS THE NEW PART ---
+      // 4. Use the UID to look up the user's document in Firestore.
+      const userDoc =
+        await admin.firestore().collection("users").doc(userRecord.uid).get();
 
-        const listData = listDocSnapshot.data() || {};
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const spots = (listData.spots || {}) as {[key: string]: any};
-        const signedUpUserIds = (listData.signedUpUserIds || []) as string[];
-
-        if (action === "signup") {
-          if (!userProfileSnapshot.exists) {
-            logger.warn(
-              `User profile for UID: ${performerUid} not found. ` +
-              "Using UID as fallback name."
-            );
-          }
-          const userProfileData = userProfileSnapshot.data() || {};
-          const performerStageName =
-            userProfileData.stageName || userProfileData.name || performerUid;
-
-          if (signedUpUserIds.includes(performerUid)) {
-            logger.warn(
-              `User ${performerUid} already signed up for list ${listId}.`
-            );
-            throw new HttpsError(
-              "already-exists",
-              "You are already signed up for a spot on this list."
-            );
-          }
-          if (spots[spotKey] && spots[spotKey].userId != null) {
-            logger.warn(`Spot ${spotKey} on list ${listId} already taken.`);
-            throw new HttpsError(
-              "already-exists",
-              `Spot ${spotKey} is already taken.`
-            );
-          }
-
-          const newSpotData = {
-            userId: performerUid,
-            name: performerStageName,
-            isOver: false,
-            signedUpAt: admin.firestore.FieldValue.serverTimestamp(),
-          };
-          const newSpots = {...spots, [spotKey]: newSpotData};
-
-          transaction.update(listDocRef, {
-            spots: newSpots,
-            signedUpUserIds: admin.firestore.FieldValue.arrayUnion(
-              performerUid
-            ),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          logger.info(
-            `User ${performerUid} signed up for spot ${
-              spotKey} on list ${listId}.`
-          );
-        } else if (action === "remove") {
-          if (!spots[spotKey] || spots[spotKey].userId !== performerUid) {
-            logger.warn(
-              `User ${performerUid} attempted to remove from spot ${spotKey} ` +
-              `on list ${listId} which they don't occupy.`
-            );
-            throw new HttpsError(
-              "failed-precondition",
-              "You are not signed up for this spot or the spot is empty."
-            );
-          }
-
-          const newSpots = {...spots};
-          delete newSpots[spotKey];
-
-          transaction.update(listDocRef, {
-            spots: newSpots,
-            signedUpUserIds: admin.firestore.FieldValue.arrayRemove(
-              performerUid
-            ),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          logger.info(
-            `User ${performerUid} removed from spot ${
-              spotKey} on list ${listId}.`
-          );
-        }
-      });
-
-      return {
-        success: true,
-        message:
-          action === "signup" ?
-            "Successfully signed up!" :
-            "Successfully removed from spot.",
-      };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      const logPayload = {
-        listId,
-        spotKey,
-        action,
-        performerUid,
-        error: error.message || error.toString(),
-        details: error.details,
-      };
-      logger.error("Transaction failed for manageSpotSignup:", logPayload);
-
-      if (error instanceof HttpsError) {
-        throw error;
+      if (!userDoc.exists) {
+        // This is an edge case where a user exists in Auth but not Firestore.
+        functions.logger.warn(`User ${userRecord.uid} found in Auth but not in Firestore.`);
+        return null;
       }
-      throw new HttpsError(
-        "internal",
-        error.message || "An error occurred while managing your spot.",
-        error.details
+
+      const stageName = userDoc.data()?.stageName || "Unknown Stage Name";
+      // --- END OF NEW PART ---
+
+      // 5. The Response: Return both the UID and the stageName.
+      return { uid: userRecord.uid, stageName: stageName };
+    } catch (error: any) {
+      if (error.code === "auth/user-not-found") {
+        return null;
+      }
+      functions.logger.error("Error finding user by email:", error);
+      throw new functions.https.HttpsError(
+          "internal",
+          "An unexpected error occurred.",
       );
     }
-  }
-);
+  });
