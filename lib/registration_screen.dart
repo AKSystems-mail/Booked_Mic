@@ -147,7 +147,7 @@ bool attemptCreate = e.code == 'user-not-found' || e.code == 'invalid-credential
       if (userCredential.user != null) {
         await _firestore.collection('users').doc(userCredential.user!.uid).set({
           'uid': userCredential.user!.uid,
-          'email': email,
+          'email': email.toLowerCase(),
           'stageName': stageName, // Use validated stage name
           'createdAt': FieldValue.serverTimestamp(),
         });

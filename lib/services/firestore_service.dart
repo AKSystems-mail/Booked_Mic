@@ -57,6 +57,21 @@ class FirestoreService {
     });
   }
 
+  Stream<List<Show>> getShowsForUser(String userId) {
+    // This is the correct, modern way to perform an OR query.
+    return _db
+        .collection(_listCollection)
+        .where(
+          Filter.or(
+            Filter('userId', isEqualTo: userId),
+            Filter('guestHostId', isEqualTo: userId),
+          ),
+        )
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => Show.fromFirestore(doc))
+            .toList());
+  }
 
   Future<void> removePerformerFromSpot(String listId, String spotKey) async {
     final docRef = _db.collection(_listCollection).doc(listId);

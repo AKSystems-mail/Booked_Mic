@@ -432,8 +432,6 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                     label: 'Number of Bucket Spots')),
             const SizedBox(height: 24),
              // Space before error message
-
-            // --- ERROR MESSAGE DISPLAY ---
             if (_errorMessage != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12.0),
@@ -492,7 +490,6 @@ const SizedBox(height: 32), // Before the button
     }
 
     return Scaffold(
-      // ... (Your existing Scaffold AppBar and main body Container)
       appBar: AppBar(
         backgroundColor: appBarColor,
         elevation: 0,

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Ensure Timestamp is available
 import 'package:myapp/services/firestore_service.dart';
 import 'package:myapp/models/show.dart';
+import 'package:cloud_functions/cloud_functions.dart'; // <-- ADD THIS IMPORT
+
 
 class FirestoreProvider extends ChangeNotifier {
   final FirestoreService _firestoreService = FirestoreService();
@@ -13,22 +15,16 @@ class FirestoreProvider extends ChangeNotifier {
     return _firestoreService.getShows();
   }
 
+  // New method to get shows where user is either owner or guest host
+  Stream<List<Show>> getShowsForUser(String userId) {
+    return _firestoreService.getShowsForUser(userId);
+  }
+
   Stream<Show> getShow(String listId) {
     return _firestoreService.getShow(listId);
   }
 
   Future<String> createShow(Show show) async {
-    // The Show object passed from list_setup_screen already has most fields.
-    // The FirestoreService's createShow method should handle setting the actual document ID
-    // and adding FieldValue.serverTimestamp() for createdAt.
-    // It should also ensure 'spots' is an empty map {} and 'signedUpUserIds' is an empty list []
-    // if the Show object's toMap() doesn't already guarantee this for new shows.
-
-    // The 'show.toMap()' method now includes 'normalizedAddress'.
-    // The 'date' is already a Timestamp from show.toMap().
-
-    // If your FirestoreService.createShow expects a Map<String, dynamic>
-    // and handles adding `createdAt` and generating an ID:
     Map<String, dynamic> showData = show.toMap();
 
     // Ensure essential fields for a new list are correctly initialized if not set by model
@@ -39,15 +35,56 @@ class FirestoreProvider extends ChangeNotifier {
     // The ID from the Show object might be empty ('') if it's a new show.
     // The service should generate a new ID.
     return await _firestoreService.createShow(show);
-    // OR if your service takes a Show object directly:
-    // return await _firestoreService.createShow(show);
-    // In this case, ensure FirestoreService.createShow adds createdAt and handles ID generation.
   }
 
   Future<void> updateShowMap(String listId, Map<String, dynamic> updateData) async {
-    // Ensure 'updatedAt' is part of this update if you track it
-    // updateData['updatedAt'] = FieldValue.serverTimestamp();
+    // Add updatedAt timestamp
+    updateData['updatedAt'] = FieldValue.serverTimestamp();
     await _firestoreService.updateShow(listId, updateData);
+  }
+
+// --- Guest Host Methods ---
+Future<Map<String, dynamic>?> findUserByEmail(String email) async {
+  try {
+    final HttpsCallable callable =
+        FirebaseFunctions.instance.httpsCallable('findUserByEmail');
+
+    final HttpsCallableResult result = await callable.call<Map<String, dynamic>>({
+      'email': email.toLowerCase(),
+    });
+
+    // The result.data will now be a Map like {'uid': '...', 'stageName': '...'}
+    // or null if the user was not found.
+    return result.data as Map<String, dynamic>?;
+  } on FirebaseFunctionsException catch (e) {
+    print('Cloud Function error: [${e.code}] ${e.message}');
+    return null;
+  } catch (e) {
+    print('Error calling findUserByEmail function: $e');
+    return null;
+  }
+}
+
+  // Helper method to check if a user can edit a show
+  Future<bool> canUserEditShow(String userId, String showId) async {
+    try {
+      final show = await getShow(showId).first;
+      return show.canUserEdit(userId);
+    } catch (e) {
+      print('Error checking edit permissions: $e');
+      return false;
+    }
+  }
+
+  // Helper method to check if a user can delete a show
+  Future<bool> canUserDeleteShow(String userId, String showId) async {
+    try {
+      final show = await getShow(showId).first;
+      return show.canUserDelete(userId);
+    } catch (e) {
+      print('Error checking delete permissions: $e');
+      return false;
+    }
   }
 
   // --- Spot Manipulation Methods ---
@@ -65,14 +102,11 @@ class FirestoreProvider extends ChangeNotifier {
 
   Future<void> saveReorderedSpots(String listId, Map<String, dynamic> newSpotsMap) async {
     // This method directly updates the 'spots' field.
-    // Consider adding an 'updatedAt' field update here as well.
-    // Map<String, dynamic> updatePayload = {
-    //   'spots': newSpotsMap,
-    //   'updatedAt': FieldValue.serverTimestamp(),
-    // };
-    // await _firestoreService.updateShow(listId, updatePayload);
-    // OR if your service has a dedicated method:
-    await _firestoreService.updateSpotsMap(listId, newSpotsMap);
+    Map<String, dynamic> updatePayload = {
+      'spots': newSpotsMap,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    await _firestoreService.updateShow(listId, updatePayload);
   }
 
   Future<void> deleteList(String listId) async {
