@@ -216,8 +216,15 @@ Future<void> _showOptionsDialog(BuildContext context, String listId,
 
     return Scaffold(
       appBar: AppBar(
+         centerTitle: false,
          backgroundColor: appBarColor, elevation: 0, foregroundColor: Colors.white,
-         title: Text('Created Lists'),
+         title: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+             Text('Booked Mic', style: TextStyle(fontSize: 12)),
+             Text('Created Lists'),
+           ],
+         ),
          actions: [
             Padding(
               padding: const EdgeInsets.only(right: 8.0),

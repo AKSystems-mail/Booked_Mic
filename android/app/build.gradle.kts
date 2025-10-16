@@ -28,7 +28,7 @@ android {
 
     defaultConfig {
         applicationId = "com.bookedmic.app" // This should be your unique application ID
-        minSdk = 23 
+        minSdk = flutter.minSdkVersion 
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName

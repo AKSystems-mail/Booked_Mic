@@ -83,6 +83,11 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
   List<SpotDisplayData> _regularSpotItems = [];
   List<SpotDisplayData> _waitlistSpotItems = [];
   List<SpotDisplayData> _bucketSpotItems = [];
+  
+  // Add this flag to track reorder operations
+  bool _isReordering = false;
+  
+  // ... rest of your existing variables
 
   final Map<String, bool> _isDrawingForSpot = {};
   final Map<String, String?> _drawnSpotNameForAnimation = {};
@@ -110,6 +115,7 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
   @override
   @mustCallSuper
   void dispose() {
+    _isReordering = false; // Clean up the flag
     super.dispose();
   }
 
@@ -147,13 +153,17 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
        String key = i.toString();
        if (spots.containsKey(key) && spots[key] is Map) {
          Map<String, dynamic> spotContent = spots[key];
-         tempRegular.add(SpotDisplayData(
-           spotKey: key,
-           userId: spotContent['userId'] as String?,
-           name: spotContent['name'] as String?,
-           isOver: spotContent['isOver'] as bool? ?? false,
-           category: SpotCategory.regular,
-         ));
+         if (spotContent.isEmpty) {
+           tempRegular.add(SpotDisplayData.emptyPlaceholder(key, SpotCategory.regular));
+         } else {
+           tempRegular.add(SpotDisplayData(
+             spotKey: key,
+             userId: spotContent['userId'] as String?,
+             name: spotContent['name'] as String?,
+             isOver: spotContent['isOver'] as bool? ?? false,
+             category: SpotCategory.regular,
+           ));
+         }
        } else {
          tempRegular.add(SpotDisplayData.emptyPlaceholder(key, SpotCategory.regular));
        }
@@ -689,87 +699,115 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
     }
   }
 
-  void _onReorderRegularSpots(int oldIndex, int newIndex) {
-    ScaffoldMessenger.of(context); // Capture context
-    setState(() {
-      _isLoading = true;
-      if (oldIndex < newIndex) {
-        newIndex -= 1;
-      }
-      final SpotDisplayData item = _regularSpotItems.removeAt(oldIndex);
-      _regularSpotItems.insert(newIndex, item);
+void _onReorderRegularSpots(int oldIndex, int newIndex) {
+  if (_isLoading || _isReordering) return;
 
-      _updateFirestoreAfterRegularReorder().catchError((e) {
-         // Error snackbar is shown inside _updateFirestoreAfterRegularReorder
-      }).whenComplete(() {
-        if (mounted) {
-           // Optionally show success snackbar here if needed
-          // scaffoldMessenger.showSnackBar(
-          //   const SnackBar(content: Text('Regular spot order updated.')),
-          // );
-          setState(() => _isLoading = false);
-        }
-      });
-    });
+  // Set reordering flag to prevent stream updates from interfering
+  setState(() {
+    _isReordering = true;
+  });
+
+  // Adjust the list locally
+  if (oldIndex < newIndex) {
+    newIndex -= 1;
   }
+  final SpotDisplayData item = _regularSpotItems.removeAt(oldIndex);
+  _regularSpotItems.insert(newIndex, item);
 
-  Future<void> _updateFirestoreAfterRegularReorder() async {
-    Map<String, dynamic> newSpotsMapForFirestore = {};
-    // final scaffoldMessenger = ScaffoldMessenger.of(context); // Capture context
+  // Set loading state and trigger the Firestore update
+  setState(() {
+    _isLoading = true;
+  });
 
- try {
-    DocumentSnapshot listSnapshot = await FirebaseFirestore.instance.collection('Lists').doc(widget.listId).get();
-    if (!listSnapshot.exists) throw Exception("List not found for reorder.");
-    
-    Map<String, dynamic> existingFullSpotsMap = Map<String, dynamic>.from(
-        (listSnapshot.data() as Map<String, dynamic>)['spots'] as Map? ?? {});
-
-    existingFullSpotsMap.forEach((key, value) {
-      if (key.startsWith('W') || key.startsWith('B')) {
-        newSpotsMapForFirestore[key] = value;
-      }
-    });
-
-  } catch (e) {
-     print("Error fetching existing spots for reorder: $e");
-     if (mounted) {
-       ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(content: Text('Error preparing update: ${e.toString()}')),
-       );
-     }
-     rethrow; // Rethrow to be caught by caller's catchError
-  }
-
-  // Add regular spots back in the new order
-  for (int i = 0; i < _regularSpotItems.length; i++) {
-    final spotItem = _regularSpotItems[i];
-    // --- MODIFIED CONDITION ---
-    // Include if it's not an empty placeholder AND has a name (even if userId is null)
-    if (!spotItem.isEmpty && spotItem.name != null && spotItem.name!.isNotEmpty) {
-      String newRegularKey = (i + 1).toString(); // Logical 1-based key
-      
-      Map<String, dynamic> spotDataToSave = {
-        'name': spotItem.name,
-        'isOver': spotItem.isOver, // Keep the isOver status
-      };
-      // Only include userId if it exists
-      if (spotItem.userId != null) {
-        spotDataToSave['userId'] = spotItem.userId;
-      }
-      newSpotsMapForFirestore[newRegularKey] = spotDataToSave;
+  _updateFirestoreAfterRegularReorder().catchError((e) {
+    if (mounted) {
+      // If the update fails, revert the local list and show an error
+      final SpotDisplayData revertedItem = _regularSpotItems.removeAt(newIndex);
+      _regularSpotItems.insert(oldIndex, revertedItem);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save order. Please try again.'), 
+          backgroundColor: Colors.red
+        ),
+      );
     }
-    // If spotItem is an empty placeholder, its key is simply omitted, making the spot empty in Firestore.
-  }
+  }).whenComplete(() {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _isReordering = false; // CRITICAL: Reset the reordering flag
+      });
+    }
+  });
+}
 
+
+Future<void> _updateFirestoreAfterRegularReorder() async {
   try {
-    // Using your provider method which should update the 'spots' field and 'updatedAt'
-    await context.read<FirestoreProvider>().saveReorderedSpots(widget.listId, newSpotsMapForFirestore);
+    // Get the current document to preserve all existing data
+    DocumentSnapshot listSnapshot = await FirebaseFirestore.instance
+        .collection('Lists')
+        .doc(widget.listId)
+        .get();
+    
+    if (!listSnapshot.exists) {
+      throw Exception("List not found for reorder.");
+    }
+    
+    Map<String, dynamic> existingData = listSnapshot.data() as Map<String, dynamic>;
+    Map<String, dynamic> existingSpots = Map<String, dynamic>.from(
+        existingData['spots'] as Map? ?? {});
+
+    // Create new spots map with reordered regular spots
+    Map<String, dynamic> newSpotsMap = {};
+    
+    // First, add all non-regular spots (waitlist and bucket) unchanged
+    existingSpots.forEach((key, value) {
+      if (key.startsWith('W') || key.startsWith('B')) {
+        newSpotsMap[key] = value;
+      }
+    });
+
+    // Then add regular spots in the new order
+    for (int i = 0; i < _regularSpotItems.length; i++) {
+      final spotItem = _regularSpotItems[i];
+      String newRegularKey = (i + 1).toString(); // 1-based key
+
+      if (!spotItem.isEmpty && spotItem.name != null && spotItem.name!.isNotEmpty) {
+        // Preserve all existing spot data, just update the key order
+        Map<String, dynamic> spotDataToSave = {
+          'name': spotItem.name,
+          'isOver': spotItem.isOver,
+        };
+        if (spotItem.userId != null) {
+          spotDataToSave['userId'] = spotItem.userId;
+        }
+        newSpotsMap[newRegularKey] = spotDataToSave;
+      } else {
+        // For empty spots, ensure they exist in the map
+        newSpotsMap[newRegularKey] = {};
+      }
+    }
+
+    // Update Firestore with the complete spots map
+    await FirebaseFirestore.instance
+        .collection('Lists')
+        .doc(widget.listId)
+        .update({
+      'spots': newSpotsMap,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
     print("Regular spots reordered successfully in Firestore.");
+    
   } catch (e) {
     print("Error reordering regular spots in Firestore: $e");
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving order: ${e.toString()}')),
+        SnackBar(
+          content: Text('Error saving order: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
     rethrow;
@@ -1058,9 +1096,9 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
             // Only rebuild display lists if not currently loading from a user action
             // This prevents the list from flickering during Firestore save operations
             // if the stream emits the old data briefly before the new data.
-            if (!_isLoading) {
-               _buildDisplayLists(listData);
-            }
+    if (!_isLoading && !_isReordering) {
+      _buildDisplayLists(listData);
+    }
 
             bool noRegular = _regularSpotItems.isEmpty;
             bool noWaitlist = _waitlistSpotItems.isEmpty;

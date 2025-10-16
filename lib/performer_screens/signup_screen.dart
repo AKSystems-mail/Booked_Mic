@@ -377,14 +377,49 @@ class _SignupScreenState extends State<SignupScreen> {
       bool isAvailable = spotData == null;
       bool isReserved = spotData is String && spotData == 'RESERVED';
       bool isTaken = !isAvailable && !isReserved;
-      bool isTakenByMe = false; String takenByName = 'Taken';
-      if (isTaken) { if (spotData is Map<String, dynamic>) { if (spotData['userId'] == _performerId) { isTakenByMe = true; takenByName = spotData['name'] ?? 'You'; } } else { takenByName = 'Error'; } }
+      bool isTakenByMe = false;
+      String takenByName = 'Taken';
+      bool isOver = false;
+
+      if (isTaken) {
+        if (spotData is Map<String, dynamic>) {
+          isOver = spotData['isOver'] as bool? ?? false;
+          if (spotData['userId'] == _performerId) {
+            isTakenByMe = true;
+            takenByName = spotData['name'] ?? 'You';
+          }
+        } else {
+          takenByName = 'Error';
+        }
+      }
+
       bool isSelectedByMe = _selectedSpotKey == spotKey;
-      String titleText; Color titleColor = Colors.black; FontWeight titleWeight = FontWeight.normal; TextDecoration textDecoration = TextDecoration.none;
-      if (isSelectedByMe) { titleText = _performerStageName ?? 'Selecting...'; titleColor = Colors.blue; titleWeight = FontWeight.bold; }
-      else if (isTakenByMe) { titleText = takenByName; titleWeight = FontWeight.bold; titleColor = Colors.black87; }
-      else if (isTaken && !isTakenByMe) { titleText = 'Taken'; titleColor = Colors.grey.shade600; }
-      else if (isReserved) { titleText = 'Reserved'; titleColor = Colors.orange.shade700; }
+      String titleText;
+      Color titleColor = Colors.black;
+      FontWeight titleWeight = FontWeight.normal;
+      TextDecoration textDecoration = TextDecoration.none;
+
+      if (isSelectedByMe) {
+        titleText = _performerStageName ?? 'Selecting...';
+        titleColor = Colors.blue;
+        titleWeight = FontWeight.bold;
+      } else if (isTakenByMe) {
+        titleText = takenByName;
+        titleWeight = FontWeight.bold;
+        titleColor = isOver ? Colors.grey.shade600 : Colors.black87;
+        if (isOver) {
+          textDecoration = TextDecoration.lineThrough;
+        }
+      } else if (isTaken && !isTakenByMe) {
+        titleText = 'Taken';
+        titleColor = Colors.grey.shade600;
+        if (isOver) {
+          textDecoration = TextDecoration.lineThrough;
+        }
+      } else if (isReserved) {
+        titleText = 'Reserved';
+        titleColor = Colors.orange.shade700;
+      }
       else if (isAvailable) { titleText = 'Available'; titleColor = Colors.green.shade800; }
       else { titleText = 'Unknown'; titleColor = Colors.red.shade900; }
       String spotLabel; switch (type) { case SpotType.regular: spotLabel = "${displayIndex + 1}."; break; case SpotType.waitlist: spotLabel = "W${displayIndex + 1}."; break; case SpotType.bucket: spotLabel = "B${displayIndex + 1}."; break; }

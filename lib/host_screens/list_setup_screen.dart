@@ -369,7 +369,9 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                 debounceTime: 400,
                 countries: ["us"],
                 isLatLngRequired: true,
-                getPlaceDetailWithLatLng: _updateAddressDetails, // Correct: No setState here
+                getPlaceDetailWithLatLng: (Prediction prediction) { // Correct: No setState here
+                  _updateAddressDetails(prediction);
+                },
                 itemClick: (Prediction prediction) {
                   // This updates the controller and internal state vars
                   _updateAddressDetails(prediction);
