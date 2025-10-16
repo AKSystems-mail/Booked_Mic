@@ -86,6 +86,15 @@ class RoleSelectionScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
+                FadeInDown(
+                  duration: const Duration(milliseconds: 400),
+                  child: Text(
+                    'Booked Mic',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.black.withOpacity(0.8)),
+                  ),
+                ),
+                SizedBox(height: 20), // Add some space
                 // Apply FadeInDown to introductory text
                 FadeInDown(
                   duration: const Duration(milliseconds: 500),

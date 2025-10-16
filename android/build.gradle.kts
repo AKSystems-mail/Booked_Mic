@@ -12,7 +12,7 @@ buildscript {
     dependencies {
         // --- Use the version string directly ---
         // Make sure this version MATCHES the one in settings.gradle.kts plugins block
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.22")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20")
         // --- End Use direct version ---
 
         // Add AGP and Google Services classpath if needed (check settings.gradle.kts)

@@ -6,8 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:animate_do/animate_do.dart';
-import 'package:awesome_notifications/awesome_notifications.dart';
-import 'package:collection/collection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 import 'package:intl/intl.dart'; // Import DateFormat
@@ -88,9 +86,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     'DC'
   ];
 
-  final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
-      ValueNotifier({});
-
   @override
   void initState() {
     super.initState();
@@ -99,7 +94,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
 
   @override
   void dispose() {
-    _lastNotifiedPositionNotifier.dispose();
     super.dispose();
   }
 
@@ -164,7 +158,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                       child: TextField(
                         autofocus: true,
                         decoration: InputDecoration(
-                          hintText: 'Type to search states...',
+                          hintText: 'Type to search states...', 
                           prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                           contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
@@ -232,142 +226,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
       setState(() {
         _selectedSearchState = null;
       });
-    }
-  }
-
-// --- REPLACE your old _showPositionNotification with this new one ---
-Future<void> _showCustomPositionNotification(
-    String listId, String listName, int currentPositionIndex, int totalActivePerformers) async {
-  if (!mounted) return;
-
-  String title = 'Spot Update: $listName';
-  String body = '';
-  bool playHapticFeedback = false;
-
-  if (currentPositionIndex == 0) { // 0-based index: 0 means "up next"
-    body = "You're up next!";
-    playHapticFeedback = true;
-  } else if (currentPositionIndex == 1) {
-    body = "There is 1 performer ahead of you.";
-  } else if (currentPositionIndex > 1) {
-    body = "There are $currentPositionIndex performers ahead of you.";
-  } else {
-    // currentPositionIndex is -1 (not in active list) or something unexpected.
-    // You might want a notification if they are dropped from the active list,
-    // or just return if no notification is needed for this case.
-    // For now, let's assume if currentPositionIndex is not >= 0, no "position" notification.
-    return;
-  }
-
-  try {
-    await AwesomeNotifications().createNotification(
-      content: NotificationContent(
-        id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch, // More unique ID
-        channelKey: 'spot_updates_channel',
-        title: title,
-        body: body,
-        payload: {'listId': listId, 'spot': (currentPositionIndex + 1).toString()},
-        notificationLayout: NotificationLayout.Default,
-        locked: playHapticFeedback, // Optional: if you want "up next" to be sticky
-        autoDismissible: !playHapticFeedback, // Optional
-      ),
-    );
-
-    if (playHapticFeedback && mounted) {
-      HapticFeedback.heavyImpact();
-    }
-  } catch (e) {
-    // The print statement that was here has been removed.
-    // It's generally good practice to log errors to a service like
-    // Firebase Crashlytics or Sentry in a production app, but for now,
-    // removing the print statement is sufficient.
-  }
-}
-
-
-  // --- MODIFIED _updateAndNotifyPositions ---
-  void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs) {
-    if (!mounted || currentUserId == null) return;
-    final today = DateTime.now();
-    final Map<String, int?> currentPositions = {};
-    // final Map<String, String> listIdToNameMap = {}; // Not strictly needed if passing listName directly
-
-    for (var doc in docs) {
-      final listData = doc.data() as Map<String, dynamic>? ?? {};
-      final String listId = doc.id;
-      final String listName = listData['listName'] ?? 'Unnamed List'; // Get list name
-
-      final Timestamp? showTimestamp = listData['date'] as Timestamp?;
-      if (showTimestamp != null) {
-        final showDate = showTimestamp.toDate();
-        if (showDate.year == today.year &&
-            showDate.month == today.month &&
-            showDate.day == today.day) {
-          final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
-          final numRegular = (listData['numberOfSpots'] ?? 0) as int;
-          final numWaitlist = (listData['numberOfWaitlistSpots'] ?? 0) as int;
-          
-          List<String> activePerformers = [];
-
-          // Helper to check spot and add to activePerformers
-          // This local helper is fine.
-          checkSpot(String key) {
-            if (spotsMap.containsKey(key)) {
-              final d = spotsMap[key];
-              if (d is Map && d['userId'] != null && !(d['isOver'] == true)) {
-                activePerformers.add(d['userId'] as String);
-              }
-            }
-          }
-
-          // Build activePerformers list in order
-          for (int i = 1; i <= numRegular; i++) {
-            checkSpot(i.toString());
-          }
-          for (int i = 1; i <= numWaitlist; i++) {
-            checkSpot("W$i");
-          }
-          // --- End building activePerformers ---
-
-          final int currentPositionIndex = activePerformers.indexOf(currentUserId!); // 0-based
-
-          currentPositions[listId] = currentPositionIndex; // Store 0-based index
-
-          if (currentPositionIndex != -1) { // User is in the active list
-            final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
-
-            if (lastNotifiedPosition == null || lastNotifiedPosition != currentPositionIndex) {
-              // Position has changed or it's the first notification for this list today
-              _showCustomPositionNotification( // <<< CALL THE NEW FUNCTION
-                  listId,
-                  listName,
-                  currentPositionIndex, // This is the number of people ahead (0 means next)
-                  activePerformers.length);
-            }
-          }
-        }
-      }
-    }
-
-    // Update _lastNotifiedPositionNotifier
-    final Map<String, int?> nextNotifierValue = Map.from(_lastNotifiedPositionNotifier.value);
-    currentPositions.forEach((listId, position) {
-      if (position != -1) { // Only store valid positions
-        nextNotifierValue[listId] = position;
-      } else { // User is no longer in the active list for this listId
-        nextNotifierValue.remove(listId);
-      }
-    });
-    // Also remove any lists from notifier that are no longer in `docs` (e.g., user left list entirely)
-    List<String> currentListIdsInDocs = docs.map((d) => d.id).toList();
-    _lastNotifiedPositionNotifier.value.keys
-        .where((id) => !currentListIdsInDocs.contains(id))
-        .toList()
-        .forEach(nextNotifierValue.remove);
-
-
-    if (!const MapEquality().equals(_lastNotifiedPositionNotifier.value, nextNotifierValue)) {
-      _lastNotifiedPositionNotifier.value = nextNotifierValue;
     }
   }
 
@@ -451,6 +309,7 @@ Future<void> _showCustomPositionNotification(
                final listData = doc.data() as Map<String, dynamic>? ?? {};
                final String docId = doc.id;
                String displayStatus = "In Bucket Draw";
+               bool isOver = false;
 
                final Timestamp? showTimestamp = listData['date'] as Timestamp?;
                String formattedDate = '';
@@ -464,6 +323,7 @@ Future<void> _showCustomPositionNotification(
                   spotsMap.forEach((key, value) {
                     if (value is Map && value['userId'] == currentUserId) {
                       displayStatus = "Spot: $key";
+                      isOver = value['isOver'] ?? false;
                     }
                   });
                }
@@ -480,7 +340,10 @@ Future<void> _showCustomPositionNotification(
                    child: ListTile(
                      title: Text(
                         listData['listName'] ?? 'Unnamed List',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          decoration: isOver ? TextDecoration.lineThrough : TextDecoration.none,
+                        ),
                         overflow: TextOverflow.ellipsis,
                      ),
                      // --- MODIFIED SUBTITLE TO INCLUDE MAP ICON ---
@@ -580,11 +443,6 @@ Future<void> _showCustomPositionNotification(
                             style: TextStyle(color: Colors.red.shade900))));
               }
 
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-                  _updateAndNotifyPositions(snapshot.data!.docs);
-                }
-              });
               return _buildListSection(
                   context, "Lists You're On", snapshot.data?.docs ?? [], true);
             }),
@@ -651,10 +509,8 @@ Future<void> _showCustomPositionNotification(
                         .where((doc) => doc.exists)
                         .toList();
                     validListDocs.sort((a, b) {
-                      Timestamp? dateA = (a.data()
-                          as Map<String, dynamic>?)?['date'] as Timestamp?;
-                      Timestamp? dateB = (b.data()
-                          as Map<String, dynamic>?)?['date'] as Timestamp?;
+                      Timestamp? dateA = (a.data() as Map<String, dynamic>? )?['date'] as Timestamp?;
+                      Timestamp? dateB = (b.data() as Map<String, dynamic>? )?['date'] as Timestamp?;
                       if (dateA == null && dateB == null) return 0;
                       if (dateA == null) return 1;
                       if (dateB == null) return -1;
@@ -690,7 +546,7 @@ Future<void> _showCustomPositionNotification(
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return Center(
-                child: Text('No open lists found for state \"$state\".',
+                child: Text('No open lists found for state "$state".',
                     style: TextStyle(
                         color: Colors.black54,
                         fontSize: 16))); // Corrected quote
@@ -810,12 +666,19 @@ Future<void> _showCustomPositionNotification(
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: false,
         backgroundColor: appBarColor,
         elevation: 0,
         foregroundColor: Colors.white,
-        title: Text(_selectedSearchState == null
-            ? 'My Signups'
-            : 'Open Lists: $_selectedSearchState'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Booked Mic', style: TextStyle(fontSize: 12)),
+            Text(_selectedSearchState == null
+                ? 'My Signups'
+                : 'Open Lists: $_selectedSearchState'),
+          ],
+        ),
         actions: [
           Tooltip(
               message: _selectedSearchState == null

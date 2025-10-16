@@ -116,11 +116,30 @@ class FirestoreService {
 
   // --- Ensure this method exists and uses correct collection/doc ---
   Future<void> deleteList(String listId) async {
+    final listRef = _db.collection(_listCollection).doc(listId);
+    final bucketSignupsRef = listRef.collection('bucketSignups');
+
     try {
-      await _db.collection(_listCollection).doc(listId).delete();
-      print("FirestoreService: Successfully deleted list $listId"); // Add log
+      // 1. Delete all documents in the bucketSignups subcollection
+      QuerySnapshot snapshot;
+      do {
+        snapshot = await bucketSignupsRef.limit(100).get();
+        if (snapshot.docs.isNotEmpty) {
+          WriteBatch batch = _db.batch();
+          for (DocumentSnapshot doc in snapshot.docs) {
+            batch.delete(doc.reference);
+          }
+          await batch.commit();
+        }
+      } while (snapshot.docs.isNotEmpty);
+
+      // 2. Delete the main list document
+      await listRef.delete();
+
+      print("FirestoreService: Successfully deleted list $listId and its subcollections");
+
     } catch (e) {
-      print("FirestoreService: Error deleting list $listId: $e"); // Add log
+      print("FirestoreService: Error deleting list $listId: $e");
       rethrow;
     }
   }

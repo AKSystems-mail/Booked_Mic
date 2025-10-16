@@ -10,6 +10,9 @@ import 'package:myapp/services/settings_service.dart'; // Import new service
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'package:myapp/services/notification_service.dart';
+import 'dart:async';
+
 // Import your screen widgets
 import 'firebase_options.dart';
 import 'registration_screen.dart'; // Keep imports for routes/AuthWrapper
@@ -25,14 +28,11 @@ Future<void> main() async {
   } catch (e) {
      // print("Error loading .env file: $e");
   }
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
 
   // --- Awesome Notifications Initialization ---
   await AwesomeNotifications().initialize(
     // Set the icon to null to use the default app icon
-    null, // Or 'resource://drawable/res_app_icon' if you have one
+    'resource://drawable/res_app_icon', // Or 'resource://drawable/res_app_icon' if you have one
     [ // Define Notification Channels
       NotificationChannel(
         channelGroupKey: 'basic_channel_group',
@@ -135,23 +135,50 @@ class NotificationController {
 // --- End Notification Controller ---
 
 
-class MyApp extends StatelessWidget {
-    final Color primaryBlue = Colors.blue.shade400;
-    final Color buttonBlue = Colors.blue.shade600;
+class MyApp extends StatefulWidget {
+  @override
+  _MyAppState createState() => _MyAppState();
+}
 
-    @override
-    Widget build(BuildContext context) {
-      return MaterialApp(
-        // Optional: Add navigatorKey for potential background navigation handling
-        // navigatorKey: MyApp.navigatorKey, // Define static key if needed
-        title: 'Booked Mic',
-        theme: ThemeData( /* ... Theme Definition ... */ ),
-        home: AuthWrapper(),
-        routes: { /* ... Routes ... */ },
-      );
-    }
-    // Define static key if using for navigation from notification action
-    // static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+class _MyAppState extends State<MyApp> {
+  final Future<FirebaseApp> _initialization = Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: _initialization,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: Text('Error initializing Firebase: ${snapshot.error}'),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.done) {
+          return MaterialApp(
+            title: 'Booked Mic',
+            theme: ThemeData( /* ... Theme Definition ... */ ),
+            home: AuthWrapper(),
+            routes: { /* ... Routes ... */ },
+          );
+        }
+
+        return MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class AuthWrapper extends StatefulWidget { // Change to StatefulWidget for initState
@@ -162,28 +189,45 @@ class AuthWrapper extends StatefulWidget { // Change to StatefulWidget for initS
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+    StreamSubscription<User?>? _authSubscription;
+
     @override
     void initState() {
       super.initState();
-      // --- Request Permission After Initial Frame ---
-      // Request notification permission shortly after the AuthWrapper builds
-      // (and presumably after login is confirmed). Avoids blocking main().
+      
       WidgetsBinding.instance.addPostFrameCallback((_) {
          _requestNotificationPermission();
       });
-      // --- End Request ---
+
+      _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) async {
+        if (user != null) {
+          // User is logged in
+          final role = await _getSavedRole();
+          if (role == 'performer') {
+            NotificationService().startListening(user.uid);
+          } else {
+            // If role is not performer or not set, stop listening
+            NotificationService().stopListening();
+          }
+        } else {
+          // User is logged out
+          NotificationService().stopListening();
+        }
+      });
+    }
+
+    @override
+    void dispose() {
+      _authSubscription?.cancel();
+      super.dispose();
     }
 
     Future<void> _requestNotificationPermission() async {
        bool isAllowed = await AwesomeNotifications().isNotificationAllowed();
-       if (!isAllowed && mounted) { // Check mounted before showing dialog
+       if (!isAllowed && mounted) {
           await AwesomeNotifications().requestPermissionToSendNotifications();
-          // Re-check status after request
-          isAllowed = await AwesomeNotifications().isNotificationAllowed();
-       } else {
        }
     }
-
 
     Future<String?> _getSavedRole() async {
       final prefs = await SharedPreferences.getInstance();
@@ -200,7 +244,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
           }
 
           if (authSnapshot.hasData && authSnapshot.data != null) {
-            // User is logged in
             return FutureBuilder<String?>(
               future: _getSavedRole(),
               builder: (context, roleSnapshot) {
@@ -214,12 +257,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 final role = roleSnapshot.data;
                 if (role == 'host') {
                   return CreatedListsScreen();
-                } else if (role == 'performer') return PerformerListScreen();
-                else return RoleSelectionScreen();
+                } else if (role == 'performer') {
+                  return PerformerListScreen();
+                }
+                else {
+                  return RoleSelectionScreen();
+                }
               },
             );
           } else {
-            // User is not logged in
             return RegistrationScreen();
           }
         },
