@@ -1,8 +1,9 @@
-// lib/pages/role_selection_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:animate_do/animate_do.dart'; // Import animate_do
+import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
 
 // Import destination screens
 import 'host_screens/created_lists_screen.dart'; // Adjusted path assuming structure
@@ -30,8 +31,7 @@ class RoleSelectionScreen extends StatelessWidget {
     }
   }
 
-  // Optional: Add sign out
-  Future<void> _signOut(BuildContext context) async {
+  Future<void> _performSignOut(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_role'); // Clear role on sign out
     await FirebaseAuth.instance.signOut();
@@ -40,6 +40,136 @@ class RoleSelectionScreen extends StatelessWidget {
       context,
       MaterialPageRoute(builder: (context) => RegistrationScreen()),
       (Route<dynamic> route) => false, // Remove all routes below
+    );
+  }
+
+  Future<void> _deleteAccount(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No user is currently signed in.')),
+      );
+      return;
+    }
+
+    // Prompt for re-authentication
+    final bool? reauthenticated = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final TextEditingController emailController = TextEditingController(text: user.email);
+        final TextEditingController passwordController = TextEditingController();
+        return AlertDialog(
+          title: const Text('Re-authenticate to Delete Account'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Please enter your password to confirm account deletion.'),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(labelText: 'Email'),
+                enabled: false, // Email should not be editable
+              ),
+              TextField(
+                controller: passwordController,
+                decoration: const InputDecoration(labelText: 'Password'),
+                obscureText: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                  AuthCredential credential = EmailAuthProvider.credential(
+                    email: emailController.text,
+                    password: passwordController.text,
+                  );
+                  await user.reauthenticateWithCredential(credential);
+                  Navigator.of(dialogContext).pop(true); // Re-authentication successful
+                } on FirebaseAuthException catch (e) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text('Re-authentication failed: ${e.message}')),
+                  );
+                  Navigator.of(dialogContext).pop(false); // Re-authentication failed
+                }
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (reauthenticated == null || !reauthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account deletion cancelled or re-authentication failed.')),
+      );
+      return;
+    }
+
+    try {
+      // Delete user data from Firestore
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).delete();
+      // TODO: Implement deletion of other user-related data (e.g., shows, signups)
+
+      // Delete user from Firebase Authentication
+      await user.delete();
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_role'); // Clear role on account deletion
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account and associated data deleted successfully.')),
+      );
+
+      // Navigate back to registration after account deletion, clearing the stack
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => RegistrationScreen()),
+        (Route<dynamic> route) => false, // Remove all routes below
+      );
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error deleting account: ${e.message}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('An unexpected error occurred: $e')),
+      );
+    }
+  }
+
+  void _showSignOutOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return SafeArea(
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Sign Out'),
+                onTap: () {
+                  Navigator.of(dialogContext).pop(); // Close the dialog
+                  _performSignOut(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_forever, color: Colors.red),
+                title: const Text('Delete Account', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.of(dialogContext).pop(); // Close the dialog
+                  _deleteAccount(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -55,14 +185,14 @@ class RoleSelectionScreen extends StatelessWidget {
         backgroundColor: appBarColor,
         elevation: 0,
         foregroundColor: Colors.white,
-        title: Text('Select Your Role'),
+        title: const Text('Select Your Role'),
         automaticallyImplyLeading: false, // Keep back button removed as per previous logic
         actions: [ // Keep Sign Out Button
           Tooltip(
             message: 'Sign Out',
             child: IconButton(
-              icon: Icon(Icons.logout),
-              onPressed: () => _signOut(context),
+              icon: const Icon(Icons.logout),
+              onPressed: () => _showSignOutOptions(context),
             ),
           ),
         ],
@@ -94,7 +224,7 @@ class RoleSelectionScreen extends StatelessWidget {
                     style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.black.withOpacity(0.8)),
                   ),
                 ),
-                SizedBox(height: 20), // Add some space
+                const SizedBox(height: 20), // Add some space
                 // Apply FadeInDown to introductory text
                 FadeInDown(
                   duration: const Duration(milliseconds: 500),
@@ -105,7 +235,7 @@ class RoleSelectionScreen extends StatelessWidget {
                     style: TextStyle(fontSize: 18, color: Colors.black.withOpacity(0.7)),
                   ),
                 ),
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
 
                 // Apply FadeInDown sequentially to buttons
                 FadeInDown(
@@ -116,7 +246,7 @@ class RoleSelectionScreen extends StatelessWidget {
                         radius: 50, // Adjust the size as needed
                         backgroundColor: buttonColor,
                         child: IconButton(
-                          icon: Icon(
+                          icon: const Icon(
                             Icons.mic_external_on,
                             color: Colors.white,
                             size: 40, // Adjust the size as needed
@@ -124,7 +254,7 @@ class RoleSelectionScreen extends StatelessWidget {
                           onPressed: () => _selectRole(context, 'host'),
                         ),
                       ),
-                      SizedBox(height: 10),
+                      const SizedBox(height: 10),
                       Text(
                         'Host',
                         style: TextStyle(color: buttonColor, fontSize: 18, fontWeight: FontWeight.bold),
@@ -132,7 +262,7 @@ class RoleSelectionScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
 
                 FadeInDown(
                   duration: const Duration(milliseconds: 700),
@@ -142,7 +272,7 @@ class RoleSelectionScreen extends StatelessWidget {
                         radius: 50, // Adjust the size as needed
                         backgroundColor: buttonColor,
                         child: IconButton(
-                          icon: Icon(
+                          icon: const Icon(
                             Icons.emoji_people_outlined,
                             color: Colors.white,
                             size: 40, // Adjust the size as needed
@@ -150,7 +280,7 @@ class RoleSelectionScreen extends StatelessWidget {
                           onPressed: () => _selectRole(context, 'performer'),
                         ),
                       ),
-                      SizedBox(height: 10),
+                      const SizedBox(height: 10),
                       Text(
                         'Performer',
                         style: TextStyle(color: buttonColor, fontSize: 18, fontWeight: FontWeight.bold),
@@ -166,3 +296,4 @@ class RoleSelectionScreen extends StatelessWidget {
     );
   }
 }
+
