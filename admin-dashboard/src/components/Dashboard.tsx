@@ -14,43 +14,38 @@ interface Show {
   address: string;
   numberOfSpots: number;
   userId: string;
+  stageName?: string;
 }
 
 const Dashboard: React.FC = () => {
   const [shows, setShows] = useState<Show[]>([]);
   const [loading, setLoading] = useState(true);
-    const [performerNames, setPerformerNames] = useState<{[key: string]: string}>({});
   
     useEffect(() => {
-      const fetchShows = async () => {
+      const fetchShowsAndPerformers = async () => {
         try {
           const querySnapshot = await getDocs(collection(db, 'Lists'));
-          const showsData = querySnapshot.docs.map(doc => {
-            const data = doc.data();
+          const showsData = await Promise.all(querySnapshot.docs.map(async (document) => {
+            const data = document.data();
+            let stageName = 'Unknown';
+            if (data.userId) {
+              const userDocRef = doc(db, 'users', data.userId);
+              const userDoc = await getDoc(userDocRef);
+              if (userDoc.exists()) {
+                stageName = (userDoc.data() as { stageName: string }).stageName || 'Unknown';
+              }
+            }
             return {
-              id: doc.id,
+              id: document.id,
               showName: data.listName,
               date: data.date,
               address: data.address,
               numberOfSpots: data.numberOfSpots,
-              userId: data.userId
+              userId: data.userId,
+              stageName: stageName,
             };
-          });
+          }));
           setShows(showsData);
-  
-          const userIds = showsData.map(show => show.userId).filter(id => id);
-          const uniqueUserIds = [...new Set(userIds)];
-  
-          const names: {[key: string]: string} = {};
-          for (const userId of uniqueUserIds) {
-            if (userId) {
-              const userDoc = await getDoc(doc(db, 'users', userId));
-              if (userDoc.exists()) {
-                names[userId] = userDoc.data().performerName || 'Unknown';
-              }
-            }
-          }
-          setPerformerNames(names);
   
         } catch (error) {
           console.error("Error fetching shows: ", error);
@@ -58,7 +53,7 @@ const Dashboard: React.FC = () => {
         setLoading(false);
       };
   
-      fetchShows();
+      fetchShowsAndPerformers();
     }, []);
   
     const handleDelete = async (id: string) => {
@@ -72,7 +67,7 @@ const Dashboard: React.FC = () => {
       }
     };
   
-    const handleLogout = (). => {
+    const handleLogout = () => {
       signOut(auth);
     };
   
@@ -93,7 +88,7 @@ const Dashboard: React.FC = () => {
           <thead>
             <tr>
               <th>Show Name</th>
-              <th>Created By</th>
+              <th>Stage Name</th>
               <th>Date</th>
               <th>Address</th>
               <th>Spots</th>
@@ -104,7 +99,7 @@ const Dashboard: React.FC = () => {
             {shows.map(show => (
               <tr key={show.id}>
                 <td>{show.showName}</td>
-                <td>{performerNames[show.userId]}</td>
+                <td>{show.stageName}</td>
                 <td>{show.date.toDate().toLocaleDateString()}</td>
                 <td>{show.address}</td>
                 <td>{show.numberOfSpots}</td>              <td>
