@@ -60,11 +60,11 @@ class HomeScreen extends StatelessWidget {
                      context,
                      MaterialPageRoute(builder: (context) => PerformerListScreen()), // Changed ScannerScreen to PerformerListScreen
                    );
-                 }, // Consider changing text to 'Scan QR Code'
+                 },
                   style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(vertical: buttonSpacing), // Responsive padding
                 ),
-                 child: const Text('Generate QR Code'),
+                 child: const Text('Generate QR Code'), // Consider changing text to 'Scan QR Code'
               ),
             ],
           ),

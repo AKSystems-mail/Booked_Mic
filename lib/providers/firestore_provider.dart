@@ -1,148 +1,109 @@
-// lib/providers/firestore_provider.dart
-
+// providers/firestore_provider.dart
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Ensure Timestamp is available
 import 'package:myapp/services/firestore_service.dart';
 import 'package:myapp/models/show.dart';
-import 'package:cloud_functions/cloud_functions.dart'; // <-- ADD THIS IMPORT
-
+import 'package:myapp/models/performer.dart';
+import 'package:myapp/models/city.dart';
+//
 
 class FirestoreProvider extends ChangeNotifier {
   final FirestoreService _firestoreService = FirestoreService();
 
-  // --- List/Show Methods ---
   Stream<List<Show>> getShows() {
     return _firestoreService.getShows();
   }
 
-  // New method to get shows where user is either owner or guest host
-  Stream<List<Show>> getShowsForUser(String userId) {
-    return _firestoreService.getShowsForUser(userId);
+  Stream<Show> getShow(String showId) {
+    return _firestoreService.getShow(showId);
   }
 
-  Stream<Show> getShow(String listId) {
-    return _firestoreService.getShow(listId);
+  // --- Show Methods ---
+
+  Future<void> createShow(Show show) async {
+    await _firestoreService.createShow(show);
+    notifyListeners();
   }
 
-  Future<String> createShow(Show show) async {
-    Map<String, dynamic> showData = show.toMap();
-
-    // Ensure essential fields for a new list are correctly initialized if not set by model
-    showData['spots'] = showData['spots'] ?? {}; // Default to empty map
-    showData['signedUpUserIds'] = showData['signedUpUserIds'] ?? []; // Default to empty list
-    showData['createdAt'] = FieldValue.serverTimestamp(); // Set creation timestamp here or in service
-
-    // The ID from the Show object might be empty ('') if it's a new show.
-    // The service should generate a new ID.
-    return await _firestoreService.createShow(show);
+  Future<void> updateShow(String showId, Map<String, dynamic> updateData) async {
+    await _firestoreService.updateShow(showId, updateData);
+    notifyListeners();
   }
 
-  Future<void> updateShowMap(String listId, Map<String, dynamic> updateData) async {
-    // Add updatedAt timestamp
-    updateData['updatedAt'] = FieldValue.serverTimestamp();
-    await _firestoreService.updateShow(listId, updateData);
+  Future<void> updatePerformerInSignup(String showId, String performerId, Performer updatedPerformer) async {
+    await _firestoreService.updatePerformerInSignup(showId, performerId, updatedPerformer);
+    notifyListeners();
   }
 
-// --- Guest Host Methods ---
-Future<Map<String, dynamic>?> findUserByEmail(String email) async {
-  try {
-    final HttpsCallable callable =
-        FirebaseFunctions.instance.httpsCallable('findUserByEmail');
-
-    final HttpsCallableResult result = await callable.call<Map<String, dynamic>>({
-      'email': email.toLowerCase(),
-    });
-
-    // The result.data will now be a Map like {'uid': '...', 'stageName': '...'}
-    // or null if the user was not found.
-    return result.data as Map<String, dynamic>?;
-  } on FirebaseFunctionsException catch (e) {
-    print('Cloud Function error: [${e.code}] ${e.message}');
-    return null;
-  } catch (e) {
-    print('Error calling findUserByEmail function: $e');
-    return null;
-  }
-}
-
-  // Helper method to check if a user can edit a show
-  Future<bool> canUserEditShow(String userId, String showId) async {
-    try {
-      final show = await getShow(showId).first;
-      return show.canUserEdit(userId);
-    } catch (e) {
-      print('Error checking edit permissions: $e');
-      return false;
-    }
+  Stream<List<City>> getCities() {
+    return _firestoreService.getCities();
   }
 
-  // Helper method to check if a user can delete a show
-  Future<bool> canUserDeleteShow(String userId, String showId) async {
-    try {
-      final show = await getShow(showId).first;
-      return show.canUserDelete(userId);
-    } catch (e) {
-      print('Error checking delete permissions: $e');
-      return false;
-    }
+  Future<void> addCity(City city) async {
+    await _firestoreService.addCity(city);
+    notifyListeners();
   }
 
-  // --- Spot Manipulation Methods ---
-  Future<void> setSpotOver(String listId, String spotKey, bool isOver, String performerId) async {
-    await _firestoreService.setSpotOver(listId, spotKey, isOver, performerId);
+  Future<void> updateCity(String cityId, City city) async {
+    await _firestoreService.updateCity(cityId, city);
+    notifyListeners();
   }
 
-  Future<void> addManualNameToSpot(String listId, String spotKey, String name) async {
-    await _firestoreService.addManualNameToSpot(listId, spotKey, name);
+  Stream<List<Performer>> getPerformers() {
+    return _firestoreService.getPerformers();
+  }
+
+  Future<void> addPerformer(Performer performer) async {
+    await _firestoreService.addPerformer(performer);
+    notifyListeners();
+  }
+
+  Future<void> updatePerformer(Performer performer, Performer updatedPerformer) async {
+    await _firestoreService.updatePerformer(updatedPerformer);
+    notifyListeners();
+  }
+
+  Future<void> addNameToSpot(String showId, int index, String name) async {
+    await _firestoreService.addNameToSpot(showId, index, name);
+    notifyListeners();
+  }
+
+  Future<void> removeNameFromSpot(String showId, int index) async {
+    await _firestoreService.removeNameFromSpot(showId, index);
+    notifyListeners();
+  }
+
+  Future<void> reorderSpots(String showId, int oldIndex, int newIndex) async {
+    await _firestoreService.reorderSpots(showId, oldIndex, newIndex);
+    notifyListeners();
+  }
+
+  Future<void> removeBucketName(String showId, String name) async {
+    await _firestoreService.removeBucketName(showId, name);
+    notifyListeners();
+  }
+
+  Future<List<String>> getBucketNames(String showId) async {
+    return await _firestoreService.getBucketNames(showId);
+  }
+
+  Future<Map<String, dynamic>?> drawAndAssignBucketSpot(String listId, String bucketSpotKey) async {
+    final result = await _firestoreService.drawAndAssignBucketSpot(listId, bucketSpotKey);
+    notifyListeners();
+    return result;
   }
 
   Future<void> removePerformerFromSpot(String listId, String spotKey) async {
     await _firestoreService.removePerformerFromSpot(listId, spotKey);
+    notifyListeners();
   }
 
-  Future<void> saveReorderedSpots(String listId, Map<String, dynamic> newSpotsMap) async {
-    // This method directly updates the 'spots' field.
-    Map<String, dynamic> updatePayload = {
-      'spots': newSpotsMap,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-    await _firestoreService.updateShow(listId, updatePayload);
+  Future<void> addManualNameToSpot(String listId, String spotKey, String name) async {
+    await _firestoreService.addManualNameToSpot(listId, spotKey, name);
+    notifyListeners();
   }
 
-  Future<void> deleteList(String listId) async {
-    await _firestoreService.deleteList(listId);
-  }
-
-  Future<void> resetListSpots(String listId) async {
-    await _firestoreService.resetListSpots(listId);
-  }
-
-  // --- Bucket Methods ---
-  Stream<int> getBucketSignupCountStream(String listId) {
-    return _firestoreService.getBucketSignupCountStream(listId);
-  }
-
-  Future<bool> isUserInBucket(String listId, String userId) async {
-    return await _firestoreService.isUserInBucket(listId, userId);
-  }
-
-  Future<void> addUserToBucket(String listId, String userId, String stageName) async {
-    await _firestoreService.addUserToBucket(listId, userId, stageName);
-  }
-
-  Future<void> removeUserFromBucket(String listId, String userId) async {
-    await _firestoreService.removeUserFromBucket(listId, userId);
-  }
-
-  Future<int> getBucketSignupCount(String listId) async {
-    return await _firestoreService.getBucketSignupCount(listId);
-  }
-
-  Future<Map<String, dynamic>?> drawAndAssignBucketSpot(String listId, String bucketSpotKey) async {
-    try {
-      return await _firestoreService.drawAndAssignBucketSpot(listId, bucketSpotKey);
-    } catch (e) {
-      rethrow;
-    }
+  Future<void> setSpotOver(String listId, String spotKey, bool isOver, String performerId) async {
+    await _firestoreService.setSpotOver(listId, spotKey, isOver, performerId);
+    notifyListeners();
   }
 }

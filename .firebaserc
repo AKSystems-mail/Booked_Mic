@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "bookedmic-1cf9d"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

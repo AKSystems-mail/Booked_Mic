@@ -1,10 +1,11 @@
 
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import 'package:awesome_notifications/awesome_notifications.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+//
 import 'package:flutter/services.dart';
+import 'widget_service.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -14,6 +15,10 @@ class NotificationService {
   StreamSubscription<QuerySnapshot>? _listsSubscription;
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
+  
+  // New: Notifier for the UI banner
+  final ValueNotifier<String?> bannerMessageNotifier = ValueNotifier(null);
+  final ValueNotifier<bool> isUpNextNotifier = ValueNotifier(false);
 
   void startListening(String userId) {
     if (_listsSubscription != null) {
@@ -31,6 +36,11 @@ class NotificationService {
   void stopListening() {
     _listsSubscription?.cancel();
     _lastNotifiedPositionNotifier.value = {};
+    bannerMessageNotifier.value = null;
+  }
+
+  void dismissBanner() {
+    bannerMessageNotifier.value = null;
   }
 
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs, String userId) {
@@ -50,45 +60,43 @@ class NotificationService {
             showDate.day == today.day) {
           final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
           final numRegular = (listData['numberOfSpots'] ?? 0) as int;
-          final numWaitlist = (listData['numberOfWaitlistSpots'] ?? 0) as int;
           
-          List<String> activePerformers = [];
+          List<String> activeRegularPerformers = [];
 
-          checkSpot(String key) {
+          void checkSpot(String key) {
             if (spotsMap.containsKey(key)) {
               final d = spotsMap[key];
               if (d is Map && d['userId'] != null && !(d['isOver'] == true)) {
-                activePerformers.add(d['userId'] as String);
+                activeRegularPerformers.add(d['userId'] as String);
               }
             }
           }
 
+          // Strictly Regular Spots as per instructions
           for (int i = 1; i <= numRegular; i++) {
             checkSpot(i.toString());
           }
-          for (int i = 1; i <= numWaitlist; i++) {
-            checkSpot("W\$i");
-          }
 
-          final int currentPositionIndex = activePerformers.indexOf(userId);
-
+          final int currentPositionIndex = activeRegularPerformers.indexOf(userId);
           currentPositions[listId] = currentPositionIndex;
 
           if (currentPositionIndex != -1) {
             final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
 
-            if (lastNotifiedPosition == null || lastNotifiedPosition != currentPositionIndex) {
+            // Only notify if position decreased (moved forward)
+            if (lastNotifiedPosition == null || currentPositionIndex < lastNotifiedPosition) {
               _showCustomPositionNotification(
                   listId,
                   listName,
                   currentPositionIndex,
-                  activePerformers.length);
+                  activeRegularPerformers.length);
             }
           }
         }
       }
     }
 
+    // Update global state
     final Map<String, int?> nextNotifierValue = Map.from(_lastNotifiedPositionNotifier.value);
     currentPositions.forEach((listId, position) {
       if (position != -1) {
@@ -104,47 +112,65 @@ class NotificationService {
         .toList()
         .forEach(nextNotifierValue.remove);
 
-    if (_lastNotifiedPositionNotifier.value != nextNotifierValue) {
+    if (!mapEquals(_lastNotifiedPositionNotifier.value, nextNotifierValue)) {
       _lastNotifiedPositionNotifier.value = nextNotifierValue;
     }
   }
 
   Future<void> _showCustomPositionNotification(
       String listId, String listName, int currentPositionIndex, int totalActivePerformers) async {
-    String title = 'Spot Update: \$listName';
+    String title = 'Spot Update: $listName';
     String body = '';
-    bool playHapticFeedback = false;
+    bool isOnStage = false;
+    bool isUpNext = false;
 
     if (currentPositionIndex == 0) {
-      body = "You're up next!";
-      playHapticFeedback = true;
+      body = "YOU ARE ON"; // Factual status for UI/Widget
+      isOnStage = true;
     } else if (currentPositionIndex == 1) {
+      body = "You're up next! Get ready.";
+      isUpNext = true;
+    } else if (currentPositionIndex == 2) {
       body = "There is 1 performer ahead of you.";
-    } else if (currentPositionIndex > 1) {
-      body = "There are \$currentPositionIndex performers ahead of you.";
     } else {
-      return;
+      body = "There are ${currentPositionIndex - 1} performers ahead of you.";
+    }
+
+    // Set UI banner
+    bannerMessageNotifier.value = body;
+    isUpNextNotifier.value = isUpNext || isOnStage;
+
+    // Update Home Widget
+    if (!kIsWeb) {
+      WidgetService.updateUpNextWidget(
+        listName: listName,
+        spotNumber: (currentPositionIndex + 1).toString(),
+        isOnStage: isOnStage,
+        isUpNext: isUpNext,
+      );
     }
 
     try {
-      await AwesomeNotifications().createNotification(
-        content: NotificationContent(
-          id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch,
-          channelKey: 'spot_updates_channel',
-          title: title,
-          body: body,
-          payload: {'listId': listId, 'spot': (currentPositionIndex + 1).toString()},
-          notificationLayout: NotificationLayout.Default,
-          locked: playHapticFeedback,
-          autoDismissible: !playHapticFeedback,
-        ),
-      );
+      // ONLY send push notification if NOT on stage (redundant since they get notified at #2)
+      if (!kIsWeb && !isOnStage) {
+        await AwesomeNotifications().createNotification(
+          content: NotificationContent(
+            id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch,
+            channelKey: 'spot_updates_channel',
+            title: title,
+            body: body,
+            payload: {'listId': listId, 'spot': (currentPositionIndex + 1).toString()},
+            notificationLayout: NotificationLayout.Default,
+            locked: isUpNext,
+            autoDismissible: !isUpNext,
+          ),
+        );
 
-      if (playHapticFeedback) {
+        // Physical vibration on every move forward
         HapticFeedback.heavyImpact();
       }
     } catch (e) {
-      // Log errors to a service
+      // Log errors
     }
   }
 }

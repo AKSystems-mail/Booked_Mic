@@ -24,49 +24,45 @@ class FlashlightService extends ChangeNotifier {
   FlashlightService({required this.listId, required this.timerService}) {
     _loadInitialSettings();
     _checkTorchAvailability();
-    // Listen to the timer service for threshold reached
+    // Listen to the timer service for threshold and finished events
     timerService.onThresholdReached = _handleThresholdReached;
+    timerService.onTimerFinished = _handleTimerFinished;
   }
 
-   Future<void> _loadInitialSettings() async {
+  Future<void> _loadInitialSettings() async {
     final settings = await _settingsService.loadTimerSettings(listId);
     _autoLightEnabled = settings['autoLightEnabled'] as bool;
-    notifyListeners(); // Notify UI about initial auto-light state
+    notifyListeners();
   }
 
-   Future<void> _checkTorchAvailability() async {
-      try {
-        _isTorchAvailable = await TorchLight.isTorchAvailable();
-      } catch (e) {
-         _isTorchAvailable = false;
-         debugPrint("Error checking torch availability: $e");
-      }
-   }
+  Future<void> _checkTorchAvailability() async {
+    try {
+      _isTorchAvailable = await TorchLight.isTorchAvailable();
+    } catch (e) {
+      _isTorchAvailable = false;
+      debugPrint("Error checking torch availability: $e");
+    }
+  }
 
   Future<void> setAutoLightEnabled(bool enabled) async {
     _autoLightEnabled = enabled;
     await _settingsService.saveAutoLightSetting(
         listId: listId, autoLightEnabled: enabled);
     notifyListeners();
-    // Optionally turn off light if auto-light is disabled and light is on?
-    // if (!enabled && _isFlashlightOn) {
-    //   turnFlashlightOff();
-    // }
   }
 
-  // Called by TimerService when threshold is reached
   void _handleThresholdReached() {
-    if (_autoLightEnabled) {
-      if (!_isFlashlightOn) {
-        debugPrint("Auto-light enabled, turning flashlight ON.");
-        turnFlashlightOn();
-      } else {
-        debugPrint("Auto-light enabled, but flashlight already ON.");
-      }
+    if (_autoLightEnabled && !_isFlashlightOn) {
+      debugPrint("Auto-light enabled, turning flashlight ON at threshold.");
+      turnFlashlightOn();
     } else {
-      debugPrint("Auto-light disabled, requesting prompt.");
       _requestLightPrompt();
     }
+  }
+
+  void _handleTimerFinished() {
+    debugPrint("Timer finished, requesting light prompt.");
+    _requestLightPrompt();
   }
 
   // Request UI to show the prompt

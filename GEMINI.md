@@ -1,97 +1,63 @@
-# Project Overview
+# Booked_Mic Project Context
 
-This is a Flutter-based mobile application called "Booked Mic" with a React-based web admin dashboard and a Firebase backend.
+## Project Overview
+**Booked_Mic** is a comprehensive platform for managing performance lists at open mic events. It connects hosts and performers through a real-time ecosystem.
 
-**Mobile App (Flutter):**
+### Core Components
+1.  **Mobile/Web App (Flutter):** The primary interface for performers (to sign up and track their spot) and hosts (to create and manage lists on the go).
+2.  **Admin Dashboard (React):** A web-based portal for high-level administration and data management.
+3.  **Backend (Firebase):**
+    *   **Firestore:** Real-time NoSQL database for lists (`Lists` collection), users (`users` collection), and bucket signups.
+    *   **Authentication:** Supports Email/Password and Google Sign-In.
+    *   **Cloud Functions:** TypeScript-based serverless functions for secure operations like `findUserByEmail` and `manageSpotSignup`.
+    *   **Emulators:** Fully configured for local development of Auth, Firestore, and Functions.
 
-*   **Purpose:** The mobile app appears to be for performers and hosts at events. Performers can likely see their position on a list, and hosts can manage these lists.
-*   **Technologies:**
-    *   Flutter for the cross-platform mobile application.
-    *   Firebase for backend services:
-        *   **Firestore:** As a database.
-        *   **Firebase Authentication:** For user management.
-        *   **Firebase Cloud Functions:** For backend logic.
-    *   `provider` for state management.
-    *   `awesome_notifications` for local notifications.
-    *   `google_sign_in` for authentication.
-    *   Other dependencies for handling device features like camera, flashlight, and permissions.
+## Technical Architecture (Flutter)
+- **State Management:** `Provider` pattern. `FirestoreProvider` handles the bridge between UI and `FirestoreService`.
+- **Data Models:** 
+    - `Show`: Represents an event/list. Includes `spots` (a Map of performer data) and `signedUpUserIds`.
+- **Services:**
+    - `FirestoreService`: Direct interaction with Firestore using transactions for atomic spot management.
+    - `NotificationService`: Manages real-time spot updates using `awesome_notifications`.
+- **Navigation:** `AuthWrapper` in `main.dart` handles routing based on `authStateChanges` and the user's saved role (`host` vs `performer`).
 
-**Admin Dashboard (React):**
+## Local Development & Testing
 
-*   **Purpose:** A web-based dashboard for administrators to manage the application's data.
-*   **Technologies:**
-    *   React for the user interface.
-    *   `firebase` for interacting with the Firebase backend.
-    *   `react-router-dom` for routing.
-    *   `bootstrap` for styling.
+### Prerequisites
+- Flutter SDK
+- Node.js & npm
+- Firebase CLI
+- Google Maps API Key (stored in `.env`)
 
-**Backend (Firebase Cloud Functions):**
-
-*   **Purpose:** To host the backend logic for the application.
-*   **Technologies:**
-    *   Node.js with TypeScript.
-    *   `firebase-admin` and `firebase-functions` for interacting with Firebase services.
-
-# Building and Running
-
-**Flutter App:**
-
-To run the Flutter app, you will need to have the Flutter SDK installed.
-
-1.  **Install dependencies:**
+### Lean Local Workflow (Recommended for 8GB RAM)
+1.  **Start Emulators:**
     ```bash
-    flutter pub get
+    firebase emulators:start --only auth,firestore,functions,ui
     ```
-2.  **Run the app:**
+2.  **Run Flutter Web (Debug Mode):**
     ```bash
-    flutter run
+    flutter run -d chrome
+    ```
+    *Note: In debug mode, the app automatically connects to `localhost:9099` (Auth) and `localhost:8080` (Firestore).*
+3.  **Run Admin Dashboard:**
+    ```bash
+    cd admin-dashboard && npm start
     ```
 
-**Admin Dashboard:**
+### Building for Production
+- **Flutter Web:** `flutter build web`
+- **Android:** `flutter build apk` or `flutter build appbundle`
+- **Functions:** `cd functions && npm run build`
 
-To run the admin dashboard, you will need to have Node.js and npm installed.
+## Development Conventions
+- **Atomic Transactions:** Always use Firestore transactions for spot signups/removals to prevent double-booking.
+- **Surgical Dependencies:** Keep the 8GB MBP environment in mind; avoid adding heavy libraries unless necessary.
+- **Security Compliance:** Use `npm audit` regularly. Core Firebase and Google Auth packages must be kept up to date to support modern security protocols (e.g., Google's `CredentialManager`).
+- **Platform Checks:** Use `kIsWeb` for conditional logic between mobile and web-specific features (like Google Sign-In initialization).
 
-1.  **Navigate to the `admin-dashboard` directory:**
-    ```bash
-    cd admin-dashboard
-    ```
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-3.  **Start the development server:**
-    ```bash
-    npm start
-    ```
-
-**Firebase Functions:**
-
-To deploy or test the Firebase Functions, you will need to have the Firebase CLI installed.
-
-1.  **Navigate to the `functions` directory:**
-    ```bash
-    cd functions
-    ```
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-3.  **Build the TypeScript code:**
-    ```bash
-    npm run build
-    ```
-4.  **Run the functions in the emulator:**
-    ```bash
-    npm run serve
-    ```
-5.  **Deploy the functions:**
-    ```bash
-    npm run deploy
-    ```
-
-# Development Conventions
-
-*   The project follows the standard Flutter and React project structures.
-*   The Flutter app uses the `provider` package for state management.
-*   The backend Firebase Functions are written in TypeScript.
-*   The admin dashboard is a standard Create React App.
+## Key Files
+- `lib/main.dart`: App entry point and Emulator connection logic.
+- `lib/registration_screen.dart`: Authentication UI (compatible with `google_sign_in` 7.2.0).
+- `lib/services/firestore_service.dart`: Core database logic.
+- `functions/src/index.ts`: Backend business logic.
+- `firebase.json`: Emulator and Firebase service configuration.

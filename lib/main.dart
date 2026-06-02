@@ -1,232 +1,317 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:provider/provider.dart';
-import 'package:myapp/providers/firestore_provider.dart';
-import 'package:myapp/services/settings_service.dart'; // Import new service
-// --- Import Awesome Notifications ---
-import 'package:awesome_notifications/awesome_notifications.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:awesome_notifications/awesome_notifications.dart';
+import 'package:flutter/foundation.dart';
+import 'package:quick_actions/quick_actions.dart';
+import 'package:home_widget/home_widget.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:provider/provider.dart';
 
-import 'package:myapp/services/notification_service.dart';
-import 'dart:async';
-
-// Import your screen widgets
+// Import your screen widgets and services
 import 'firebase_options.dart';
-import 'registration_screen.dart'; // Keep imports for routes/AuthWrapper
+import 'registration_screen.dart';
 import 'role_selection_screen.dart';
 import 'host_screens/created_lists_screen.dart';
 import 'performer_screens/performer_list_screen.dart';
+import 'performer_screens/nearby_mics_screen.dart';
+import 'services/user_service.dart';
+import 'providers/firestore_provider.dart';
+import 'services/settings_service.dart';
+
+// Helper: lightweight client-side logging to Firestore for diagnostics
+Future<void> addClientLog(String level, String msg, {String? uid, Map<String, dynamic>? meta}) async {
+  try {
+    await FirebaseFirestore.instance.collection('client_logs').add({
+      'level': level,
+      'message': msg,
+      'uid': uid ?? FirebaseAuth.instance.currentUser?.uid,
+      'meta': meta ?? {},
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    // Swallow errors to avoid crashing the app during diagnostics
+    debugPrint('[client_log] failed to write log: $e');
+  }
+}
+
+
+
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-     await dotenv.load(fileName: ".env");
-     // print(".env file loaded successfully.");
-  } catch (e) {
-     // print("Error loading .env file: $e");
-  }
-
-  // --- Awesome Notifications Initialization ---
-  await AwesomeNotifications().initialize(
-    // Set the icon to null to use the default app icon
-    'resource://drawable/res_app_icon', // Or 'resource://drawable/res_app_icon' if you have one
-    [ // Define Notification Channels
-      NotificationChannel(
-        channelGroupKey: 'basic_channel_group',
-        channelKey: 'spot_updates_channel', // Channel key used in performer_list_screen
-        channelName: 'List Position Updates',
-        channelDescription: 'Notifications about your position in performance lists',
-        defaultColor: Colors.blue.shade400, // Use a theme color
-        ledColor: Colors.white,
-        importance: NotificationImportance.High,
-        channelShowBadge: true,
-        // soundSource: 'resource://raw/res_custom_sound', // Optional
-      )
-    ],
-    // Optional channel groups:
-    channelGroups: [
-      NotificationChannelGroup(
-        channelGroupKey: 'basic_channel_group',
-        channelGroupName: 'Basic group')
-    ],
-  );
-
-  // Set up listeners for notification actions (important for handling taps)
-  AwesomeNotifications().setListeners(
-      onActionReceivedMethod:         NotificationController.onActionReceivedMethod,
-      onNotificationCreatedMethod:    NotificationController.onNotificationCreatedMethod,
-      onNotificationDisplayedMethod:  NotificationController.onNotificationDisplayedMethod,
-      onDismissActionReceivedMethod:  NotificationController.onDismissActionReceivedMethod
-  );
-
-  // --- Check and Request Permission ---
-  // It's generally better to request permission later in the app flow
-  // when the user understands why notifications are needed (e.g., after login
-  // or when they first view the performer screen).
-  // We'll add a function to call from AuthWrapper later.
-  // --- End Permission Check ---
-
-  // --- End Awesome Notifications Initialization ---
-
-   runApp(
-    MultiProvider(
-      providers: [
-        // Your existing FirestoreProvider
-        ChangeNotifierProvider(create: (_) => FirestoreProvider()),
-
-        // Add SettingsService (using simple Provider if no listening needed directly)
-        Provider(create: (_) => SettingsService.instance), // Provide singleton instance
-
-        // --- Add other providers as needed by specific routes ---
-        // Note: TimerService and FlashlightService need listId, so they
-        // should be provided closer to where ShowListScreen is used,
-        // OR you need a way to manage instances per listId if multiple
-        // lists can be open simultaneously.
-        // Providing them directly here is problematic if they are list-specific.
-        // See ShowListScreen widget above for how they are provided there instead.
-
-        // --- Example if they were app-wide (NOT list-specific) ---
-        // ChangeNotifierProvider(
-        //   create: (context) => TimerService(listId: 'some_default_or_managed_id'),
-        // ),
-        // ChangeNotifierProxyProvider<TimerService, FlashlightService>(
-        //   create: (context) => FlashlightService(
-        //     listId: 'some_default_or_managed_id',
-        //     timerService: Provider.of<TimerService>(context, listen: false),
-        //   ),
-        //   update: (context, timerService, previous) => previous!..updateDependencies(timerService),
-        // ),
-         // ----------------------------------------------------------
-      ],
-      child: MyApp(),
-    ),
- );
-}
-
-// --- Awesome Notifications Controller (Static methods required) ---
-// Place this outside any class or ensure methods are static if inside a class
-class NotificationController {
-  /// Use this method to detect when a new notification or a schedule is created
-  @pragma("vm:entry-point")
-  static Future <void> onNotificationCreatedMethod(ReceivedNotification receivedNotification) async {
-  }
-
-  /// Use this method to detect every time that a new notification is displayed
-  @pragma("vm:entry-point")
-  static Future <void> onNotificationDisplayedMethod(ReceivedNotification receivedNotification) async {
-  }
-
-  /// Use this method to detect if the user dismissed a notification
-  @pragma("vm:entry-point")
-  static Future <void> onDismissActionReceivedMethod(ReceivedAction receivedAction) async {
-  }
-
-  /// Use this method to detect when the user taps on a notification or action button
-  @pragma("vm:entry-point")
-  static Future <void> onActionReceivedMethod(ReceivedAction receivedAction) async {
-    final payload = receivedAction.payload; // Payload is a Map<String?, String?>?
-    if (payload != null) {
-    }
-  }
-}
-// --- End Notification Controller ---
-
-
-class MyApp extends StatefulWidget {
-  @override
-  _MyAppState createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  final Future<FirebaseApp> _initialization = Firebase.initializeApp(
+  
+  await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder(
-      future: _initialization,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return MaterialApp(
-            home: Scaffold(
-              body: Center(
-                child: Text('Error initializing Firebase: ${snapshot.error}'),
-              ),
-            ),
-          );
-        }
+  if (kDebugMode) {
+    FirebaseFunctions.instance.useFunctionsEmulator('localhost', 5001);
+  }
 
-        if (snapshot.connectionState == ConnectionState.done) {
-          return MaterialApp(
-            title: 'Booked Mic',
-            theme: ThemeData( /* ... Theme Definition ... */ ),
-            home: AuthWrapper(),
-            routes: { /* ... Routes ... */ },
-          );
-        }
+  debugPrint('[main] Firebase initialized. currentUser=${FirebaseAuth.instance.currentUser?.uid ?? 'null'}');
+  // Also log to Firestore for post-mortem diagnostics (non-blocking)
+  addClientLog('info', 'firebase_initialized', meta: {'currentUser': FirebaseAuth.instance.currentUser?.uid});
 
-        return MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          ),
-        );
-      },
+  // Log auth events to help diagnose unexpected sign-outs
+  FirebaseAuth.instance.idTokenChanges().listen((user) {
+    debugPrint('[main] idTokenChanges: user=${user?.uid ?? 'null'} email=${user?.email ?? 'null'}');
+    addClientLog('info', 'idTokenChanges', uid: user?.uid, meta: {'email': user?.email});
+  });
+  FirebaseAuth.instance.authStateChanges().listen((user) {
+    debugPrint('[main] authStateChanges (global listener): user=${user?.uid ?? 'null'} email=${user?.email ?? 'null'}');
+    addClientLog('info', 'authStateChanges', uid: user?.uid, meta: {'email': user?.email});
+  });
+
+  try {
+     await dotenv.load(fileName: ".env");
+  } catch (e) {
+     debugPrint("Error loading .env file: $e");
+  }
+
+  // Attempt Silent Sign-In for Google Users (Blocking with timeout to reduce auth restore races)
+  if (!kIsWeb) {
+    try {
+      // Await silent sign-in but don't block forever - timeout after 3s
+      await GoogleSignIn().signInSilently().timeout(const Duration(seconds: 3));
+      debugPrint('[main] Google signInSilently completed. currentUser=${FirebaseAuth.instance.currentUser?.uid ?? 'null'}');
+      addClientLog('info', 'google_signin_silent_completed', meta: {'currentUser': FirebaseAuth.instance.currentUser?.uid});
+    } catch (e) {
+      debugPrint('[main] Google signInSilently failed/timeout: $e');
+      addClientLog('warn', 'google_signin_silent_failed', meta: {'error': '$e'});
+    }
+
+    AwesomeNotifications().initialize(
+      null,
+      [
+        NotificationChannel(
+          channelKey: 'spot_updates_channel',
+          channelName: 'Spot Updates',
+          channelDescription: 'Notifications for queue position updates',
+          defaultColor: const Color(0xFF9D50BB),
+          ledColor: Colors.white,
+          importance: NotificationImportance.High,
+        )
+      ],
+      debug: true,
     );
+  }
+
+  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+  final DarwinInitializationSettings initializationSettingsIOS = DarwinInitializationSettings(requestAlertPermission: true, requestBadgePermission: true, requestSoundPermission: true);
+  final InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid, iOS: initializationSettingsIOS);
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings, onDidReceiveNotificationResponse: onDidReceiveNotificationResponse);
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => FirestoreProvider()),
+        Provider(create: (_) => SettingsService.instance),
+      ],
+      child: const MyApp(),
+    ),
+  );
+}
+
+void onDidReceiveNotificationResponse(NotificationResponse notificationResponse) async {
+  final String? payload = notificationResponse.payload;
+  if (payload != null) {
+    debugPrint('Notification TAPPED - Payload: $payload');
   }
 }
 
-class AuthWrapper extends StatefulWidget { // Change to StatefulWidget for initState
-    const AuthWrapper({Key? key}) : super(key: key);
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
 
   @override
-  State<AuthWrapper> createState() => _AuthWrapperState();
+  State<MyApp> createState() => _MyAppState();
 }
 
-class _AuthWrapperState extends State<AuthWrapper> {
-    StreamSubscription<User?>? _authSubscription;
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+    final Color primaryBlue = Colors.blue.shade400;
+    final Color buttonBlue = Colors.blue.shade600;
+
+    final QuickActions quickActions = const QuickActions();
 
     @override
     void initState() {
       super.initState();
-      
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-         _requestNotificationPermission();
-      });
+      WidgetsBinding.instance.addObserver(this);
+      _setupQuickActions();
+      _setupHomeWidgetLinks();
+    }
 
-      _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) async {
-        if (user != null) {
-          // User is logged in
-          final role = await _getSavedRole();
-          if (role == 'performer') {
-            NotificationService().startListening(user.uid);
-          } else {
-            // If role is not performer or not set, stop listening
-            NotificationService().stopListening();
-          }
-        } else {
-          // User is logged out
-          NotificationService().stopListening();
+    @override
+    void dispose() {
+      WidgetsBinding.instance.removeObserver(this);
+      super.dispose();
+    }
+
+    @override
+    void didChangeAppLifecycleState(AppLifecycleState state) {
+      debugPrint('[lifecycle] state=$state');
+      addClientLog('info', 'lifecycle', meta: {'state': state.toString()});
+    }
+
+    void _setupHomeWidgetLinks() {
+      HomeWidget.setAppGroupId('group.bookedmic.app');
+      HomeWidget.initiallyLaunchedFromHomeWidget().then((uri) {
+        if (uri?.host == 'nearbyMics') {
+          navigatorKey.currentState?.pushNamed('/nearbyMics');
+        }
+      });
+      
+      HomeWidget.widgetClicked.listen((uri) {
+        if (uri?.host == 'nearbyMics') {
+          navigatorKey.currentState?.pushNamed('/nearbyMics');
+        }
+      });
+    }
+
+    void _setupQuickActions() {
+      quickActions.setShortcutItems(<ShortcutItem>[
+        const ShortcutItem(type: 'quick_scan', localizedTitle: 'Quick Scan', icon: 'ic_launcher'),
+        const ShortcutItem(type: 'switch_role', localizedTitle: 'Switch Role', icon: 'ic_launcher'),
+      ]);
+
+      quickActions.initialize((shortcutType) async {
+        final prefs = await SharedPreferences.getInstance();
+        
+        if (shortcutType == 'quick_scan') {
+           await prefs.setString('user_role', 'performer');
+           // PerformerListScreen.autoScanTrigger = true;
+           navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
+        } else if (shortcutType == 'switch_role') {
+           await prefs.remove('user_role');
+           navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
         }
       });
     }
 
     @override
-    void dispose() {
-      _authSubscription?.cancel();
-      super.dispose();
+    Widget build(BuildContext context) {
+      return MaterialApp(
+        navigatorKey: navigatorKey,
+        debugShowCheckedModeBanner: false,
+        title: 'Booked Mic',
+        theme: ThemeData(
+          primaryColor: primaryBlue,
+          colorScheme: ColorScheme.fromSeed(seedColor: primaryBlue, primary: primaryBlue, secondary: Colors.purple.shade100),
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+          appBarTheme: AppBarTheme(backgroundColor: primaryBlue, foregroundColor: Colors.white, elevation: 0, titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w500), iconTheme: const IconThemeData(color: Colors.white)),
+          elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(foregroundColor: Colors.white, backgroundColor: buttonBlue, minimumSize: const Size(double.infinity, 50), padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)), textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold), elevation: 5)),
+          outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(foregroundColor: buttonBlue, minimumSize: const Size(double.infinity, 50), padding: const EdgeInsets.symmetric(vertical: 12), side: BorderSide(color: buttonBlue, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0)), textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: Colors.white.withValues(alpha: 0.8), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: primaryBlue, width: 1.5)), labelStyle: TextStyle(color: Colors.grey.shade700), hintStyle: TextStyle(color: Colors.grey.shade500), prefixIconColor: Colors.grey.shade600),
+          scaffoldBackgroundColor: Colors.purple.shade50,
+          floatingActionButtonTheme: FloatingActionButtonThemeData(backgroundColor: primaryBlue, foregroundColor: Colors.white),
+        ),
+        home: const AuthWrapper(),
+        routes: {
+          '/registration': (context) => const RegistrationScreen(),
+          '/roleSelection': (context) => const RoleSelectionScreen(),
+          '/hostHome': (context) => CreatedListsScreen(),
+          '/performerHome': (context) => PerformerListScreen(),
+          '/nearbyMics': (context) => const NearbyMicsScreen(),
+        },
+      );
+    }
+}
+
+class AuthWrapper extends StatefulWidget {
+    const AuthWrapper({super.key});
+
+    @override
+    State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+    String? _lastEnsuredUserId;
+
+    /// True once we've given Firebase Auth enough time to restore a persisted
+    /// session.  Until this flips to true the widget shows a spinner instead of
+    /// the login screen – eliminating the race between UI routing and the async
+    /// credential restore that happens on every cold start.
+    bool _authSettled = false;
+
+    late final Stream<User?> _authStream;
+
+    @override
+    void initState() {
+      super.initState();
+      _authStream = FirebaseAuth.instance.authStateChanges();
+      _waitForAuthToSettle();
     }
 
-    Future<void> _requestNotificationPermission() async {
-       bool isAllowed = await AwesomeNotifications().isNotificationAllowed();
-       if (!isAllowed && mounted) {
-          await AwesomeNotifications().requestPermissionToSendNotifications();
-       }
+    /// Polls `currentUser` for up to 10 seconds on cold start (if the user
+    /// was previously signed in).  If the user is new (no `last_known_uid`)
+    /// we settle after 2 seconds to avoid an unnecessary long spinner.
+    /// During the wait we also attempt Google silent sign-in to help Firebase
+    /// Auth recover a Google credential on devices where native persistence
+    /// is slow or unreliable.
+    Future<void> _waitForAuthToSettle() async {
+      addClientLog('info', 'auth_settle_start');
+
+      const int intervalMs = 250;
+      // Returning users get a full 10 s to restore; new users settle sooner.
+      final prefs = await SharedPreferences.getInstance();
+      final bool hasLastUid = prefs.containsKey('last_known_uid');
+      const int returningTimeoutMs = 10000;
+      const int freshTimeoutMs = 2000;
+      final int timeoutMs = hasLastUid ? returningTimeoutMs : freshTimeoutMs;
+      int waited = 0;
+
+      addClientLog('info', 'auth_settle_config',
+          meta: {'hasLastUid': hasLastUid, 'timeoutMs': timeoutMs});
+
+      while (waited < timeoutMs) {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          addClientLog('info', 'auth_settle_resolved_early',
+              uid: user.uid, meta: {'waitedMs': waited});
+          break;
+        }
+
+        // If we've been waiting for 2 seconds with no user and the user
+        // might be a Google user, try silent sign-in to re-hydrate the
+        // Firebase Auth session.
+        if (waited >= 2000 && !kIsWeb && hasLastUid && waited < 3000) {
+          try {
+            final googleUser = await GoogleSignIn().signInSilently()
+                .timeout(const Duration(seconds: 2));
+            if (googleUser != null) {
+              final googleAuth = await googleUser.authentication;
+              final credential = GoogleAuthProvider.credential(
+                accessToken: googleAuth.accessToken,
+                idToken: googleAuth.idToken,
+              );
+              await FirebaseAuth.instance.signInWithCredential(credential);
+            }
+          } catch (_) {
+            // Silent sign-in failed – the user probably used email/password
+            // or their Google session has expired.  Continue polling.
+          }
+        }
+
+        await Future.delayed(const Duration(milliseconds: intervalMs));
+        waited += intervalMs;
+      }
+
+      addClientLog('info', 'auth_settle_done',
+          meta: {'hasUser': FirebaseAuth.instance.currentUser != null, 'waitedMs': waited});
+
+      if (mounted) {
+        setState(() => _authSettled = true);
+      }
     }
 
     Future<String?> _getSavedRole() async {
@@ -234,24 +319,51 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return prefs.getString('user_role');
     }
 
+    void _ensureUserSetup(String uid) {
+      if (_lastEnsuredUserId == uid) return;
+      _lastEnsuredUserId = uid;
+      _saveLastKnownUid(uid);
+
+      debugPrint("[AuthWrapper] Running background setup for UID: $uid");
+      UserService().ensureHostCode().then((code) {
+        debugPrint("[AuthWrapper] Setup complete. Code: $code");
+      });
+      UserService().cacheStageName();
+    }
+
+    Future<void> _saveLastKnownUid(String uid) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_known_uid', uid);
+      } catch (_) {}
+    }
+
+    static Future<void> clearLastKnownUid() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('last_known_uid');
+      } catch (_) {}
+    }
+
     @override
     Widget build(BuildContext context) {
       return StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
+        stream: _authStream,
         builder: (context, authSnapshot) {
-          if (authSnapshot.connectionState == ConnectionState.waiting) {
-            return Scaffold(body: Center(child: CircularProgressIndicator()));
-          }
+          debugPrint('[AuthWrapper] authSnapshot: state=${authSnapshot.connectionState} '
+              'hasData=${authSnapshot.hasData} error=${authSnapshot.error} '
+              'authSettled=$_authSettled');
 
-          if (authSnapshot.hasData && authSnapshot.data != null) {
+          final user = authSnapshot.data ?? FirebaseAuth.instance.currentUser;
+
+          if (user != null) {
+            _ensureUserSetup(user.uid);
+
             return FutureBuilder<String?>(
               future: _getSavedRole(),
               builder: (context, roleSnapshot) {
                 if (roleSnapshot.connectionState == ConnectionState.waiting) {
-                  return Scaffold(body: Center(child: CircularProgressIndicator()));
-                }
-                if (roleSnapshot.hasError) {
-                   return Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text("Error loading user profile. Please try restarting the app.\n(${roleSnapshot.error})", textAlign: TextAlign.center))));
+                  return const Scaffold(body: Center(child: CircularProgressIndicator()));
                 }
 
                 final role = roleSnapshot.data;
@@ -259,15 +371,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
                   return CreatedListsScreen();
                 } else if (role == 'performer') {
                   return PerformerListScreen();
-                }
-                else {
-                  return RoleSelectionScreen();
+                } else {
+                  return const RoleSelectionScreen();
                 }
               },
             );
-          } else {
-            return RegistrationScreen();
           }
+
+          if (!_authSettled) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+
+          return const RegistrationScreen();
         },
       );
     }

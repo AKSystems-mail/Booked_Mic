@@ -15,20 +15,19 @@ class TimerService extends ChangeNotifier {
   final ValueNotifier<int> _remainingSecondsNotifier;
   bool _isTimerRunning = false;
 
-  // Callback to notify when threshold is reached
+  // Callbacks
   VoidCallback? onThresholdReached;
+  VoidCallback? onTimerFinished;
 
   // Public getters
   int get totalSeconds => _totalSeconds;
   int get lightThresholdSeconds => _lightThresholdSeconds;
   ValueNotifier<int> get remainingSecondsNotifier => _remainingSecondsNotifier;
   bool get isTimerRunning => _isTimerRunning;
-  // <<< ADDED isPaused GETTER >>>
   bool get isPaused => _timer != null && !_isTimerRunning;
-  // <<< END ADDED >>>
 
   TimerService({required this.listId})
-      : _remainingSecondsNotifier = ValueNotifier(300) { // Initialize notifier
+      : _remainingSecondsNotifier = ValueNotifier(300) {
     _loadInitialSettings();
   }
 
@@ -36,27 +35,31 @@ class TimerService extends ChangeNotifier {
     final settings = await _settingsService.loadTimerSettings(listId);
     _totalSeconds = settings['totalSeconds'] as int;
     _lightThresholdSeconds = settings['thresholdSeconds'] as int;
-    _remainingSecondsNotifier.value = _totalSeconds; // Set initial value
-    // Auto-light setting is handled by FlashlightService
-    notifyListeners(); // Notify if total/threshold changed from default
+    _remainingSecondsNotifier.value = _totalSeconds;
+    notifyListeners();
   }
 
   void startTimer() {
     if (_isTimerRunning || _remainingSecondsNotifier.value <= 0) return;
     _isTimerRunning = true;
-    notifyListeners(); // Notify UI that timer started
+    notifyListeners();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_remainingSecondsNotifier.value > 0) {
-        _remainingSecondsNotifier.value--; // ValueNotifier handles its own notification
+        _remainingSecondsNotifier.value--;
         if (_remainingSecondsNotifier.value == _lightThresholdSeconds) {
-          onThresholdReached?.call(); // Trigger callback
+          onThresholdReached?.call();
+        }
+        if (_remainingSecondsNotifier.value == 0) {
+          onTimerFinished?.call();
+          pauseTimer(notify: false);
+          _isTimerRunning = false;
+          notifyListeners();
         }
       } else {
-        pauseTimer(notify: false); // Stop timer without notifying UI about pause state yet
-        // Optionally add a callback for time's up
-        _isTimerRunning = false; // Update state after timer loop finishes
-        notifyListeners(); // Notify UI about pause state now
+        pauseTimer(notify: false);
+        _isTimerRunning = false;
+        notifyListeners();
       }
     });
   }

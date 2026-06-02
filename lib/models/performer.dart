@@ -12,6 +12,9 @@ class Performer {
     required this.defaultCity,
   });
 
+  // Getter for FirestoreService compatibility
+  String? get uid => id;
+
   Map<String, dynamic> toMap() {
     return {
       'performerName': performerName,
@@ -23,34 +26,8 @@ class Performer {
     Map data = doc.data() as Map<String, dynamic>;
     return Performer(
       id: doc.id,
-      performerName: data['performerName'],
-      defaultCity: data['defaultCity'],
-    );
-  }
-}
-
-// models/city.dart
-
-class City {
-  final String? id;
-  final String cityName;
-
-  City({
-    this.id,
-    required this.cityName,
-  });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'cityName': cityName,
-    };
-  }
-
-  factory City.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
-    return City(
-      id: doc.id,
-      cityName: data['cityName'],
+      performerName: data['performerName'] ?? '',
+      defaultCity: data['defaultCity'] ?? '',
     );
   }
 }

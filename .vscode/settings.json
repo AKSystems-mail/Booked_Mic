@@ -1,4 +1,8 @@
 {
-    "IDX.aI.enableInlineCompletion": true,
-    "IDX.aI.enableCodebaseIndexing": true
+  "IDX.aI.enableCodebaseIndexing": true,
+  "IDX.aI.enableInlineCompletion": true,
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.home": "/usr/lib/jvm/java-17-temurin-jdk",
+  "java.jdt.ls.java.home": "/usr/lib/jvm/java-17-temurin-jdk",
+  "java.import.gradle.java.home": "/usr/lib/jvm/java-17-temurin-jdk"
 }

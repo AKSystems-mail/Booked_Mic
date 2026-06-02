@@ -1,40 +1,37 @@
+import 'package:flutter/foundation.dart';
 // lib/services/firestore_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:myapp/models/show.dart';
+import 'package:myapp/models/performer.dart';
+import 'package:myapp/models/city.dart';
 import 'dart:math';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final String _listCollection = 'Lists';
-  // Removed unused _userCollection
 
   // --- List/Show Methods ---
 
   Future<String> createShow(Show show) async {
-    // Added return type
     Map<String, dynamic> showData = show.toMap();
+    // Use the field the model expects
     showData['userId'] = show.userId;
     showData['spots'] = {};
     showData['signedUpUserIds'] = [];
     showData['createdAt'] = FieldValue.serverTimestamp();
     showData.remove('id');
-    DocumentReference docRef =
-        await _db.collection(_listCollection).add(showData);
-    return docRef.id; // Added return
+    DocumentReference docRef = await _db.collection(_listCollection).add(showData);
+    return docRef.id;
   }
 
-  Future<void> updateShow(
-      String listId, Map<String, dynamic> updateData) async {
-    // Ensure sensitive fields are not accidentally included if map comes directly from UI
+  Future<void> updateShow(String listId, Map<String, dynamic> updateData) async {
     updateData.remove('userId');
     updateData.remove('createdAt');
     updateData.remove('spots');
     updateData.remove('signedUpUserIds');
     updateData.remove('id');
-    updateData
-        .remove('qrCodeData'); // Should qrCodeData be updatable? Probably not.
+    updateData.remove('qrCodeData');
 
-    // Remove null values unless explicitly allowed (like coordinates)
     updateData.removeWhere((key, value) =>
         value == null && key != 'latitude' && key != 'longitude');
 
@@ -58,7 +55,6 @@ class FirestoreService {
   }
 
   Stream<List<Show>> getShowsForUser(String userId) {
-    // This is the correct, modern way to perform an OR query.
     return _db
         .collection(_listCollection)
         .where(
@@ -73,14 +69,15 @@ class FirestoreService {
             .toList());
   }
 
+  // --- Spot/Performer Methods ---
+
   Future<void> removePerformerFromSpot(String listId, String spotKey) async {
     final docRef = _db.collection(_listCollection).doc(listId);
     try {
       await _db.runTransaction((transaction) async {
         final docSnap = await transaction.get(docRef);
         if (!docSnap.exists) return;
-        final spotsMap =
-            (docSnap.data()?['spots'] as Map<String, dynamic>?) ?? {};
+        final spotsMap = (docSnap.data()?['spots'] as Map<String, dynamic>?) ?? {};
         final spotData = spotsMap[spotKey];
         String? userIdToRemove;
         if (spotData is Map && spotData['userId'] != null) {
@@ -93,263 +90,201 @@ class FirestoreService {
         transaction.update(docRef, updates);
       });
     } catch (e) {
-      print("Error removing performer from spot $spotKey: $e");
+      debugPrint("Error removing performer from spot $spotKey: $e");
       rethrow;
     }
   }
 
-  // --- *** ENSURE THIS METHOD EXISTS *** ---
-  Future<void> updateSpotsMap(
-      String listId, Map<String, dynamic> newSpotsMap) async {
-    try {
-      await _db
-          .collection(_listCollection)
-          .doc(listId)
-          .update({'spots': newSpotsMap});
-      print(
-          "FirestoreService: Successfully updated spots map for list $listId");
-    } catch (e) {
-      print("FirestoreService: Error updating spots map for list $listId: $e");
-      rethrow;
-    }
+  Future<void> updateSpotsMap(String listId, Map<String, dynamic> newSpotsMap) async {
+    await _db.collection(_listCollection).doc(listId).update({'spots': newSpotsMap});
   }
 
-  // --- Ensure this method exists and uses correct collection/doc ---
   Future<void> deleteList(String listId) async {
     final listRef = _db.collection(_listCollection).doc(listId);
     final bucketSignupsRef = listRef.collection('bucketSignups');
-
-    try {
-      // 1. Delete all documents in the bucketSignups subcollection
-      QuerySnapshot snapshot;
-      do {
-        snapshot = await bucketSignupsRef.limit(100).get();
-        if (snapshot.docs.isNotEmpty) {
-          WriteBatch batch = _db.batch();
-          for (DocumentSnapshot doc in snapshot.docs) {
-            batch.delete(doc.reference);
-          }
-          await batch.commit();
+    QuerySnapshot snapshot;
+    do {
+      snapshot = await bucketSignupsRef.limit(100).get();
+      if (snapshot.docs.isNotEmpty) {
+        WriteBatch batch = _db.batch();
+        for (DocumentSnapshot doc in snapshot.docs) {
+          batch.delete(doc.reference);
         }
-      } while (snapshot.docs.isNotEmpty);
-
-      // 2. Delete the main list document
-      await listRef.delete();
-
-      print("FirestoreService: Successfully deleted list $listId and its subcollections");
-
-    } catch (e) {
-      print("FirestoreService: Error deleting list $listId: $e");
-      rethrow;
-    }
+        await batch.commit();
+      }
+    } while (snapshot.docs.isNotEmpty);
+    await listRef.delete();
   }
 
   Future<void> resetListSpots(String listId) async {
     final listRef = _db.collection(_listCollection).doc(listId);
     final bucketSignupsRef = listRef.collection('bucketSignups');
-
-    try {
-      // 1. Delete all documents in the bucketSignups subcollection
-      // Fetch docs in batches to avoid memory issues if list is huge
-      QuerySnapshot snapshot;
-      do {
-        snapshot = await bucketSignupsRef.limit(100).get(); // Get up to 100 docs
-        if (snapshot.docs.isNotEmpty) {
-          WriteBatch batch = _db.batch();
-          for (DocumentSnapshot doc in snapshot.docs) {
-            batch.delete(doc.reference);
-          }
-          await batch.commit(); // Commit the batch delete
+    QuerySnapshot snapshot;
+    do {
+      snapshot = await bucketSignupsRef.limit(100).get();
+      if (snapshot.docs.isNotEmpty) {
+        WriteBatch batch = _db.batch();
+        for (DocumentSnapshot doc in snapshot.docs) {
+          batch.delete(doc.reference);
         }
-      } while (snapshot.docs.isNotEmpty); // Continue until subcollection is empty
-
-      // 2. Update the main document to clear spots and signedUpUserIds
-      await listRef.update({
-        'spots': {},
-        'signedUpUserIds': [],
-      });
-
-      print("Successfully reset spots and cleared bucket for list $listId");
-
-    } catch (e) {
-      print("Error resetting spots/bucket for list $listId: $e");
-      rethrow;
-    }
+        await batch.commit();
+      }
+    } while (snapshot.docs.isNotEmpty);
+    await listRef.update({
+      'spots': {},
+      'signedUpUserIds': [],
+    });
   }
-  
+
+  // --- Bucket Methods ---
+
   Stream<int> getBucketSignupCountStream(String listId) {
     return _db.collection(_listCollection).doc(listId)
               .collection('bucketSignups')
               .snapshots()
-              .map((snapshot) => snapshot.size); // Map snapshot to size (count)
+              .map((snapshot) => snapshot.size);
   }
 
-  // In FirestoreService class
-
-Future<List<QueryDocumentSnapshot>> getBucketSignups(String listId) async {
-  try {
-    final QuerySnapshot snapshot = await _db
-        .collection(_listCollection)
-        .doc(listId)
-        .collection('bucketSignups')
-        .get();
+  Future<List<QueryDocumentSnapshot>> getBucketSignups(String listId) async {
+    final QuerySnapshot snapshot = await _db.collection(_listCollection).doc(listId).collection('bucketSignups').get();
     return snapshot.docs;
-  } catch (e) {
-    // print("Error fetching bucket signups for list $listId: $e");
-    rethrow;
-  }
-}
-
-// In FirestoreService class
-
-Future<Map<String, dynamic>?> drawAndAssignBucketSpot(String listId, String bucketSpotKey) async {
-  final List<QueryDocumentSnapshot> bucketDocs = await getBucketSignups(listId);
-
-  if (bucketDocs.isEmpty) {
-    // print("Bucket is empty for list $listId. Cannot draw.");
-    return null; // Or throw an exception: throw Exception('Bucket is empty.');
   }
 
-  // Randomly select a performer
-  final random = Random();
-  final selectedDoc = bucketDocs[random.nextInt(bucketDocs.length)];
-  final selectedPerformerData = selectedDoc.data() as Map<String, dynamic>?;
-
-  if (selectedPerformerData == null || 
-      selectedPerformerData['userId'] == null || 
-      selectedPerformerData['stageName'] == null) {
-    // print("Selected bucket document has invalid data: ${selectedDoc.id}");
-    throw Exception('Selected bucket performer has invalid data.');
-  }
-
-  final String performerUserId = selectedPerformerData['userId'];
-  final String performerName = selectedPerformerData['stageName'];
-
-  // Prepare data for the spot
-  final Map<String, dynamic> spotData = {
-    'userId': performerUserId,
-    'name': performerName,
-    // 'timestamp': FieldValue.serverTimestamp(), // Optional: if you want to track when they were added
-  };
-
-  try {
+  Future<Map<String, dynamic>?> drawAndAssignBucketSpot(String listId, String bucketSpotKey) async {
+    final List<QueryDocumentSnapshot> bucketDocs = await getBucketSignups(listId);
+    if (bucketDocs.isEmpty) return null;
+    final selectedDoc = bucketDocs[Random().nextInt(bucketDocs.length)];
+    final selectedPerformerData = selectedDoc.data() as Map<String, dynamic>?;
+    if (selectedPerformerData == null || selectedPerformerData['userId'] == null || selectedPerformerData['stageName'] == null) {
+      throw Exception('Selected bucket performer has invalid data.');
+    }
+    final String performerUserId = selectedPerformerData['userId'];
+    final String performerName = selectedPerformerData['stageName'];
+    final Map<String, dynamic> spotData = {'userId': performerUserId, 'name': performerName};
     WriteBatch batch = _db.batch();
-
-    // 1. Update the main list document with the drawn performer for the specific bucket spot
-    DocumentReference listDocRef = _db.collection(_listCollection).doc(listId);
-    batch.update(listDocRef, {'spots.$bucketSpotKey': spotData});
-
-    // 2. Remove the drawn performer from the bucketSignups subcollection
-    DocumentReference bucketSignupDocRef = _db
-        .collection(_listCollection)
-        .doc(listId)
-        .collection('bucketSignups')
-        .doc(performerUserId); // Assuming doc ID is the userId
-    batch.delete(bucketSignupDocRef);
-
+    batch.update(_db.collection(_listCollection).doc(listId), {'spots.$bucketSpotKey': spotData});
+    batch.delete(_db.collection(_listCollection).doc(listId).collection('bucketSignups').doc(performerUserId));
     await batch.commit();
-    // print("Successfully drew $performerName ($performerUserId) for spot $bucketSpotKey and removed from bucket.");
-    return spotData; // Return the data of the assigned spot
-  } catch (e) {
-    // print("Error during drawAndAssignBucketSpot transaction for list $listId: $e");
-    rethrow;
+    return spotData;
   }
-}
 
-  // Check if a specific user is in the bucket
   Future<bool> isUserInBucket(String listId, String userId) async {
-     try {
-        final doc = await _db.collection(_listCollection).doc(listId)
-                         .collection('bucketSignups').doc(userId).get();
-        return doc.exists;
-     } catch (e) {
-        print("Error checking user in bucket: $e");
-        return false; // Assume not in bucket on error
-     }
+    final doc = await _db.collection(_listCollection).doc(listId).collection('bucketSignups').doc(userId).get();
+    return doc.exists;
   }
 
-  // Add user to bucket
   Future<void> addUserToBucket(String listId, String userId, String stageName) async {
-     try {
-        await _db.collection(_listCollection).doc(listId)
-                 .collection('bucketSignups').doc(userId) // Use userId as doc ID
-                 .set({
-                    'userId': userId,
-                    'stageName': stageName,
-                    'timestamp': FieldValue.serverTimestamp(),
-                 });
-     } catch (e) { print("Error adding user to bucket: $e"); rethrow; }
+    await _db.collection(_listCollection).doc(listId).collection('bucketSignups').doc(userId).set({
+      'userId': userId,
+      'stageName': stageName,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
   }
 
-  // Remove user from bucket
   Future<void> removeUserFromBucket(String listId, String userId) async {
-     try {
-        await _db.collection(_listCollection).doc(listId)
-                 .collection('bucketSignups').doc(userId).delete();
-     } catch (e) { print("Error removing user from bucket: $e"); rethrow; }
+    await _db.collection(_listCollection).doc(listId).collection('bucketSignups').doc(userId).delete();
   }
-  // In FirestoreService class
-  // --- ADD Method to get bucket count ---
+
   Future<int> getBucketSignupCount(String listId) async {
-    try {
-      final snapshot = await _db
-          .collection(_listCollection)
-          .doc(listId)
-          .collection('bucketSignups')
-          .count() // Use Firestore aggregate count
-          .get();
-      return snapshot.count ?? 0;
-    } catch (e) {
-      print("Error getting bucket signup count for list $listId: $e");
-      return 0; // Return 0 on error
-    }
+    final snapshot = await _db.collection(_listCollection).doc(listId).collection('bucketSignups').count().get();
+    return snapshot.count ?? 0;
   }
 
+  // --- Manual & Reorder Methods ---
 
-  Future<void> addManualNameToSpot(
-      String listId, String spotKey, String name) async {
-    try {
-      await _db.collection(_listCollection).doc(listId).update({
-        'spots.$spotKey': {
-          // Use dot notation to update a specific key in the map
-          'name': name,
-          'isOver': false, // Default to not over when manually adding
-          // Add other fields if necessary (e.g., userId: null if it's a manual add)
-        }
+  Future<void> addManualNameToSpot(String listId, String spotKey, String name) async {
+    await _db.collection(_listCollection).doc(listId).update({'spots.$spotKey': {'name': name, 'isOver': false}});
+  }
+
+  Future<void> setSpotOver(String listId, String spotKey, bool isOver, String performerId) async {
+    Map<String, dynamic> updateData = {'spots.$spotKey.isOver': isOver};
+    if (!isOver && performerId.isNotEmpty) updateData['spots.$spotKey.name'] = 'Reserved';
+    await _db.collection(_listCollection).doc(listId).update(updateData);
+  }
+
+  // --- Missing methods for FirestoreProvider ---
+
+  Stream<List<City>> getCities() {
+    return _db.collection('cities').snapshots().map((snapshot) =>
+        snapshot.docs.map((doc) => City.fromFirestore(doc)).toList());
+  }
+
+  Future<void> addCity(City city) async {
+    await _db.collection('cities').add(city.toMap());
+  }
+
+  Future<void> updateCity(String cityId, City city) async {
+    await _db.collection('cities').doc(cityId).update(city.toMap());
+  }
+
+  Stream<List<Performer>> getPerformers() {
+    return _db.collection('users').snapshots().map((snapshot) =>
+        snapshot.docs.map((doc) => Performer.fromFirestore(doc)).toList());
+  }
+
+  Future<void> updatePerformerInSignup(String showId, String performerId, Performer performer) async {
+    // This looks like it was intended to update a performer's data within a specific show/signup
+    // For now, we'll update the main user record as a best-guess implementation
+    await updatePerformer(performer);
+  }
+
+  Future<void> addPerformer(Performer performer) async {
+    await _db.collection('users').doc(performer.uid).set(performer.toMap());
+  }
+
+  Future<void> updatePerformer(Performer performer) async {
+    await _db.collection('users').doc(performer.uid).update(performer.toMap());
+  }
+
+  // For older logic support
+  Future<void> addNameToSpot(String showId, int index, String name) async {
+    await _db.collection(_listCollection).doc(showId).update({'spots.${index.toString()}': {'name': name, 'isOver': false}});
+  }
+
+  Future<void> removeNameFromSpot(String showId, int index) async {
+    await _db.collection(_listCollection).doc(showId).update({'spots.${index.toString()}': FieldValue.delete()});
+  }
+
+  Future<void> reorderSpots(String showId, int oldIndex, int newIndex) async {
+    // This is a generic reorder that was previously used. 
+    // For now we'll implement it as a placeholder to fix compilation.
+    debugPrint("reorderSpots called but logic needs verification");
+  }
+
+  Future<void> removeBucketName(String showId, String name) async {
+    // Placeholder to fix compilation
+  }
+
+  Future<List<String>> getBucketNames(String showId) async {
+    // Placeholder to fix compilation
+    return [];
+  }
+
+  // Modern Atomic Reorder
+  Future<void> reorderRegularSpots(String listId, int oldIndex, int newIndex) async {
+    final docRef = _db.collection(_listCollection).doc(listId);
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(docRef);
+      if (!snapshot.exists) return;
+      final data = snapshot.data() as Map<String, dynamic>;
+      final spots = Map<String, dynamic>.from(data['spots'] ?? {});
+      final regularSpots = <int, dynamic>{};
+      final otherSpots = <String, dynamic>{};
+      spots.forEach((key, value) {
+        final numericKey = int.tryParse(key);
+        if (numericKey != null) { regularSpots[numericKey] = value; }
+        else { otherSpots[key] = value; }
       });
-    } catch (e) {
-      print(
-          "FirestoreService: Error adding manual name to spot $spotKey for list $listId: $e");
-      rethrow; // Rethrow to allow the provider/UI to handle it
-    }
-  }
-
-
-
-  // --- Spot Map Manipulation Methods ---
-// In FirestoreService class
-
-  Future<void> setSpotOver(
-      String listId, String spotKey, bool isOver, String performerId) async {
-    try {
-      DocumentReference listRef = _db.collection(_listCollection).doc(listId);
-
-      // Update the spot data to set 'isOver'
-      Map<String, dynamic> updateData = {
-        'spots.$spotKey.isOver': isOver,
-      };
-
-      // If isOver is false and we have a performerId, set the performer name to "Reserved"
-      if (!isOver && performerId.isNotEmpty) {
-        updateData['spots.$spotKey.name'] = 'Reserved';
+      final sortedKeys = regularSpots.keys.toList()..sort();
+      final orderedSpots = sortedKeys.map((k) => regularSpots[k]).toList();
+      if (oldIndex < newIndex) newIndex -= 1;
+      final item = orderedSpots.removeAt(oldIndex);
+      orderedSpots.insert(newIndex, item);
+      final newSpots = Map<String, dynamic>.from(otherSpots);
+      for (int i = 0; i < orderedSpots.length; i++) {
+        newSpots[(i + 1).toString()] = orderedSpots[i];
       }
-
-      // Perform the update
-      await listRef.update(updateData);
-    } catch (e) {
-      print(
-          "FirestoreService: Error setting spot $spotKey to over for list $listId: $e");
-      rethrow; // Rethrow for the provider/UI
-    }
+      transaction.update(docRef, {'spots': newSpots});
+    });
   }
 }

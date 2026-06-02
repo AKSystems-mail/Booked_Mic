@@ -6,12 +6,13 @@ import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:random_text_reveal/random_text_reveal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:wakelock_plus/wakelock_plus.dart'; // <-- ADDED IMPORT
 
-
-import 'package:myapp/providers/firestore_provider.dart';
-import 'package:myapp/providers/timer_service.dart';
-import 'package:myapp/providers/flashlight_service.dart';
-import 'package:myapp/widgets/timer_control_bar.dart';
+import '../providers/firestore_provider.dart';
+import '../providers/timer_service.dart';
+import '../providers/flashlight_service.dart';
+import '../widgets/timer_control_bar.dart';
 
 // Define SpotCategory enum
 enum SpotCategory { regular, waitlist, bucket }
@@ -47,25 +48,22 @@ class ShowListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<FirestoreProvider>(
-      create: (_) => FirestoreProvider(),
-      child: MultiProvider(
-        providers: [
-          ChangeNotifierProvider<TimerService>(
-              create: (_) => TimerService(listId: listId)),
-          ChangeNotifierProxyProvider<TimerService, FlashlightService>(
-              create: (context) => FlashlightService(
-                  listId: listId,
-                  timerService:
-                      Provider.of<TimerService>(context, listen: false)),
-              update: (context, timerService, previousFlashlightService) {
-                final flashlight = previousFlashlightService ??
-                    FlashlightService(listId: listId, timerService: timerService);
-                return flashlight;
-              }),
-        ],
-        child: ShowListScreenContent(listId: listId),
-      ),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<TimerService>(
+            create: (_) => TimerService(listId: listId)),
+        ChangeNotifierProxyProvider<TimerService, FlashlightService>(
+            create: (context) => FlashlightService(
+                listId: listId,
+                timerService:
+                    Provider.of<TimerService>(context, listen: false)),
+            update: (context, timerService, previousFlashlightService) {
+              final flashlight = previousFlashlightService ??
+                  FlashlightService(listId: listId, timerService: timerService);
+              return flashlight;
+            }),
+      ],
+      child: ShowListScreenContent(listId: listId),
     );
   }
 }
@@ -84,10 +82,8 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
   List<SpotDisplayData> _waitlistSpotItems = [];
   List<SpotDisplayData> _bucketSpotItems = [];
   
-  // Add this flag to track reorder operations
   bool _isReordering = false;
-  
-  // ... rest of your existing variables
+  bool _hasPromptedLightForCurrentSession = false; // Flag to prevent duplicate dialogs in the same tick
 
   final Map<String, bool> _isDrawingForSpot = {};
   final Map<String, String?> _drawnSpotNameForAnimation = {};
@@ -100,13 +96,26 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
   void initState() {
     super.initState();
     _fetchListName();
+
+    // 1. Prevent the screen from sleeping while on this dashboard
+    try {
+      WakelockPlus.enable();
+    } catch (e) {
+      debugPrint("Wakelock error: $e");
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        final timerService = context.read<TimerService>();
+        final flashlightService = context.read<FlashlightService>();
+
+        // 2. Attach a fallback UI-level listener to the TimerService
+        timerService.addListener(_handleTimerTick);
+
         try {
-          final flashlightService = context.read<FlashlightService>();
           flashlightService.showLightPromptCallback = _showLightPromptDialog;
           flashlightService.showErrorCallback = _showErrorSnackbar;
-        } catch (e) {
+        } catch (e) { // Ignore
         }
       }
     });
@@ -115,14 +124,57 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
   @override
   @mustCallSuper
   void dispose() {
-    _isReordering = false; // Clean up the flag
+    // 3. Disable the wakelock when exiting the screen to save battery
+    try {
+      WakelockPlus.disable();
+    } catch (e) {
+      debugPrint("Wakelock error: $e");
+    }
+
+    // Remove the timer listener
+    try {
+      context.read<TimerService>().removeListener(_handleTimerTick);
+    } catch (e) {}
+
+    _isReordering = false;
     super.dispose();
+  }
+
+  // Fallback to guarantee the prompt dialog triggers on the exact second
+  void _handleTimerTick() {
+    if (!mounted) return;
+    final timerService = context.read<TimerService>();
+
+    // Reset prompt flag if the timer stops or resets
+    if (!timerService.isTimerRunning) {
+      _hasPromptedLightForCurrentSession = false;
+      return;
+    }
+
+    // Trigger dialog when remaining time hits the threshold
+    if (timerService.isTimerRunning &&
+        timerService.remainingSecondsNotifier.value == timerService.lightThresholdSeconds &&
+        !_hasPromptedLightForCurrentSession) {
+      _hasPromptedLightForCurrentSession = true;
+      _triggerThresholdLight();
+    }
+  }
+
+  Future<void> _triggerThresholdLight() async {
+    final shouldFlash = await _showLightPromptDialog();
+    if (shouldFlash == true && mounted) {
+      try {
+        final flashlightService = context.read<FlashlightService>();
+        await flashlightService.toggleFlashlight();
+      } catch (e) {
+        _showErrorSnackbar('Failed to flash light: $e');
+      }
+    }
   }
 
   Future<void> _fetchListName() async {
     try {
       final provider = context.read<FirestoreProvider>();
-      // Assuming getShow returns an object with a showName property
       final showData = await provider.getShow(widget.listId).first;
       if (mounted) {
         setState(() {
@@ -148,7 +200,6 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
      int numWaitlist = (listData['numberOfWaitlistSpots'] as int?) ?? 0;
      int numBucket = (listData['numberOfBucketSpots'] as int?) ?? 0;
 
-     // Populate Regular Spots
      for (int i = 1; i <= numRegular; i++) {
        String key = i.toString();
        if (spots.containsKey(key) && spots[key] is Map) {
@@ -169,7 +220,6 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
        }
      }
 
-     // Populate Waitlist Spots
      for (int i = 1; i <= numWaitlist; i++) {
        String key = "W$i";
        if (spots.containsKey(key) && spots[key] is Map) {
@@ -186,7 +236,6 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
        }
      }
 
-     // Populate Bucket Spots
      for (int i = 1; i <= numBucket; i++) {
        String key = "B$i";
         if (!_revealControllerKeys.containsKey(key)) {
@@ -211,91 +260,111 @@ class _ShowListScreenContentState extends State<ShowListScreenContent> {
      _bucketSpotItems = tempBucket;
    }
 
+  Future<void> _showQrDialog() async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: Center(child: Text(_listName, style: const TextStyle(color: Color(0xFF673AB7), fontWeight: FontWeight.bold))),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 250,
+              height: 250,
+              child: QrImageView(
+                data: widget.listId,
+                version: QrVersions.auto,
+                size: 250.0,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text('Scan to Join List', style: TextStyle(color: Colors.black54)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
 
-Future<void> _setTotalTimerDialog() async {
+Future<void> _showTimerSettingsDialog() async {
   if (!mounted) return;
   final timerService = context.read<TimerService>();
-  // Use a local variable for the dialog's state
   int dialogMinutes = timerService.totalSeconds ~/ 60;
-  if (dialogMinutes == 0 && timerService.totalSeconds > 0) { // Handle case where totalSeconds < 60
-      dialogMinutes = 1; // Default to 1 minute if there's some time but less than a minute
+  if (dialogMinutes == 0 && timerService.totalSeconds > 0) {
+    dialogMinutes = 1;
   } else if (dialogMinutes == 0) {
-      dialogMinutes = 5; // Default for a new timer
+    dialogMinutes = 5;
+  }
+  int dialogThresholdSeconds = timerService.lightThresholdSeconds;
+  if (dialogThresholdSeconds <= 0) {
+    dialogThresholdSeconds = 30;
   }
 
-
-  final int? resultMinutes = await showDialog<int>(
+  final bool? saved = await showDialog<bool>(
     context: context,
     builder: (BuildContext dialogContext) {
-      // Use StatefulBuilder to manage the state within the dialog
       return StatefulBuilder(
         builder: (context, setDialogState) {
+          final int maxThreshold = (dialogMinutes * 60) - 1;
           return AlertDialog(
-            title: Text("Set Length (min)"),
+            title: const Text('Timer Settings'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
+              children: [
+                const Text('Set Length', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
                 Text(
-                  "${dialogMinutes} min",
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
+                  '$dialogMinutes min',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
                 ),
-                SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: <Widget>[
-                    IconButton(
-                      icon: Icon(Icons.remove_circle_outline, size: 30),
-                      color: Theme.of(context).colorScheme.secondary,
-                      tooltip: 'Decrease time',
-                      onPressed: () {
-                        if (dialogMinutes > 1) { // Minimum 1 minute
-                          setDialogState(() {
-                            dialogMinutes--;
-                          });
-                        }
-                      },
-                    ),
-                    Expanded(
-                      child: Slider(
-                        value: dialogMinutes.toDouble(),
-                        min: 1, // Minimum 1 minute
-                        max: 180, // Max 3 hours, adjust as needed
-                        divisions: 179, // max - min
-                        label: dialogMinutes.toString(),
-                        activeColor: Theme.of(context).colorScheme.primary,
-                        inactiveColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                        onChanged: (double value) {
-                          setDialogState(() {
-                            dialogMinutes = value.round();
-                          });
-                        },
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.add_circle_outline, size: 30),
-                      color: Theme.of(context).colorScheme.secondary,
-                      tooltip: 'Increase time',
-                      onPressed: () {
-                        if (dialogMinutes < 180) { // Max 3 hours
-                          setDialogState(() {
-                            dialogMinutes++;
-                          });
-                        }
-                      },
-                    ),
-                  ],
+                Slider(
+                  value: dialogMinutes.toDouble(),
+                  min: 1,
+                  max: 180,
+                  divisions: 179,
+                  label: dialogMinutes.toString(),
+                  activeColor: Theme.of(context).colorScheme.primary,
+                  inactiveColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                  onChanged: (double value) {
+                    setDialogState(() {
+                      dialogMinutes = value.round();
+                      if (dialogThresholdSeconds >= dialogMinutes * 60) {
+                        dialogThresholdSeconds = maxThreshold > 5 ? maxThreshold : 5;
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 24),
+                const Text('Warning Threshold / Getting the light at...', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text(
+                  '$dialogThresholdSeconds s',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
+                ),
+                Slider(
+                  value: dialogThresholdSeconds.toDouble(),
+                  min: 5,
+                  max: maxThreshold.toDouble(),
+                  divisions: ((maxThreshold - 5) ~/ 5).clamp(1, 1000),
+                  label: '${dialogThresholdSeconds}s',
+                  activeColor: Theme.of(context).colorScheme.primary,
+                  inactiveColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                  onChanged: (double value) {
+                    setDialogState(() {
+                      dialogThresholdSeconds = (value / 5).round() * 5;
+                      if (dialogThresholdSeconds < 5) dialogThresholdSeconds = 5;
+                      if (dialogThresholdSeconds > maxThreshold) dialogThresholdSeconds = maxThreshold;
+                    });
+                  },
                 ),
               ],
             ),
-            actions: <Widget>[
-              TextButton(
-                child: Text("Cancel"),
-                onPressed: () => Navigator.of(dialogContext).pop(null), // Return null for cancel
-              ),
-              TextButton(
-                child: Text("Set"),
-                onPressed: () => Navigator.of(dialogContext).pop(dialogMinutes),
-              ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancel')),
+              ElevatedButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Save')),
             ],
           );
         },
@@ -303,124 +372,9 @@ Future<void> _setTotalTimerDialog() async {
     },
   );
 
-  if (resultMinutes != null && resultMinutes > 0) {
-    await timerService.setTotalSeconds(resultMinutes * 60);
-  }
-}
-
-
-Future<void> _setThresholdDialog() async {
-  if (!mounted) return;
-  final timerService = context.read<TimerService>();
-  int dialogSeconds = timerService.lightThresholdSeconds;
-  if (dialogSeconds <= 0) {
-    dialogSeconds = 30; // Default threshold
-  }
-
-  // Helper function to format seconds into M:SS or S sec
-  String formatSecondsToMinSec(int totalSeconds) {
-    if (totalSeconds < 0) totalSeconds = 0; // Should not happen with current logic
-    if (totalSeconds < 60) {
-      return "$totalSeconds sec";
-    } else {
-      int minutes = totalSeconds ~/ 60;
-      int seconds = totalSeconds % 60;
-      return "${minutes} min ${seconds.toString().padLeft(2, '0')} sec";
-    }
-  }
-
-  final int? resultSeconds = await showDialog<int>(
-    context: context,
-    builder: (BuildContext dialogContext) {
-      return StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: Text("Getting the light at... (sec)"),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  formatSecondsToMinSec(dialogSeconds), // <<< USE FORMATTER HERE
-                  style: TextStyle(
-                      fontSize: 24, // Adjusted size for potentially longer text
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: <Widget>[
-                    IconButton(
-                      icon: Icon(Icons.remove_circle_outline, size: 30),
-                      color: Theme.of(context).colorScheme.secondary,
-                      tooltip: 'Decrease threshold',
-                      onPressed: () {
-                        if (dialogSeconds > 5) {
-                          setDialogState(() {
-                            dialogSeconds -= 5;
-                            if (dialogSeconds < 5) dialogSeconds = 5;
-                          });
-                        }
-                      },
-                    ),
-                    Expanded(
-                      child: Slider(
-                        value: dialogSeconds.toDouble(),
-                        min: 5,
-                        max: 300, // Max 5 minutes
-                        divisions: (300 - 5) ~/ 5,
-                        label: formatSecondsToMinSec(dialogSeconds), // <<< USE FORMATTER FOR LABEL
-                        activeColor: Theme.of(context).colorScheme.primary,
-                        inactiveColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                        onChanged: (double value) {
-                          setDialogState(() {
-                            dialogSeconds = (value / 5).round() * 5;
-                            if (dialogSeconds < 5) dialogSeconds = 5;
-                            if (dialogSeconds > 300) dialogSeconds = 300;
-                          });
-                        },
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.add_circle_outline, size: 30),
-                      color: Theme.of(context).colorScheme.secondary,
-                      tooltip: 'Increase threshold',
-                      onPressed: () {
-                        if (dialogSeconds < 300) {
-                          setDialogState(() {
-                            dialogSeconds += 5;
-                            if (dialogSeconds > 300) dialogSeconds = 300;
-                          });
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            actions: <Widget>[
-              TextButton(
-                child: Text("Cancel"),
-                onPressed: () => Navigator.of(dialogContext).pop(null),
-              ),
-              TextButton(
-                child: Text("Set"),
-                onPressed: () => Navigator.of(dialogContext).pop(dialogSeconds),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-
-  if (resultSeconds != null) {
-    try {
-      await timerService.setLightThreshold(resultSeconds);
-    } catch (e) {
-      if (mounted) _showErrorSnackbar('Failed to set threshold: $e');
-    }
+  if (saved == true) {
+    await timerService.setTotalSeconds(dialogMinutes * 60);
+    await timerService.setLightThreshold(dialogThresholdSeconds);
   }
 }
 
@@ -433,18 +387,18 @@ Future<void> _setThresholdDialog() async {
         barrierDismissible: false,
         builder: (BuildContext dialogContext) {
            return AlertDialog(
-            title: Text('Light Performers?'),
-            content: Text('The timer threshold has been reached. Would you like to flash the light?'),
+            title: const Text('Light Performers?'),
+            content: const Text('The timer threshold has been reached. Would you like to flash the light?'),
             actions: <Widget>[
               TextButton(
-                child: Text('Not Now'),
+                child: const Text('Not Now'),
                 onPressed: () {
                   Navigator.of(dialogContext).pop(false);
                   timerService.snoozeLightPrompt();
                 },
               ),
               TextButton(
-                child: Text('Yes, Flash Light'),
+                child: const Text('Yes, Flash Light'),
                 onPressed: () => Navigator.of(dialogContext).pop(true),
               ),
             ],
@@ -460,8 +414,8 @@ Future<void> _setThresholdDialog() async {
   Future<void> _showSetOverDialog(String spotKey, String performerName,
       bool currentStatus, String performerId) async {
       if (!mounted || currentStatus) return;
-    final bool? confirm = await showDialog<bool>( context: context, builder: (BuildContext dialogContext) { return AlertDialog(title: Text('Confirm Action'), content: Text('Mark "$performerName" as set over?'),
-             actions: <Widget>[ TextButton(child: Text('Cancel'), onPressed: () => Navigator.of(dialogContext).pop(false)), TextButton(child: Text('Yes, Set Over', style: TextStyle(color: Colors.purpleAccent)), onPressed: () => Navigator.of(dialogContext).pop(true))],
+    final bool? confirm = await showDialog<bool>( context: context, builder: (BuildContext dialogContext) { return AlertDialog(title: const Text('Confirm Action'), content: Text('Mark "$performerName" as set over?'),
+             actions: <Widget>[ TextButton(child: const Text('Cancel'), onPressed: () => Navigator.of(dialogContext).pop(false)), TextButton(child: const Text('Yes, Set Over', style: TextStyle(color: Colors.purpleAccent)), onPressed: () => Navigator.of(dialogContext).pop(true))],
            );
         }
     );
@@ -470,7 +424,7 @@ Future<void> _setThresholdDialog() async {
       setState(() => _isLoading = true);
       try {
         await context.read<FirestoreProvider>().setSpotOver(widget.listId, spotKey, true, performerId);
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"$performerName" marked as over.'), duration: Duration(seconds: 2)));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"$performerName" marked as over.'), duration: const Duration(seconds: 2)));
      } catch (e) { if (mounted) _showErrorSnackbar('Error updating status: $e'); }
      finally {
          if(mounted) setState(() => _isLoading = false);
@@ -486,20 +440,20 @@ Future<void> _setThresholdDialog() async {
       context: context,
       builder: (BuildContext dialogContext) {
          return AlertDialog(
-            title: Text('Add Performer Name'),
+            title: const Text('Add Performer Name'),
             content: TextField(
               controller: nameController,
-              decoration: InputDecoration(labelText: 'Performer Name'),
+              decoration: const InputDecoration(labelText: 'Performer Name'),
               autofocus: true,
               textCapitalization: TextCapitalization.words,
             ),
             actions: <Widget>[
               TextButton(
-                child: Text('Cancel'),
+                child: const Text('Cancel'),
                 onPressed: () => Navigator.of(dialogContext).pop(),
               ),
               TextButton(
-                child: Text('Add'),
+                child: const Text('Add'),
                 onPressed: () => Navigator.of(dialogContext).pop(nameController.text.trim()),
               ),
             ],
@@ -521,13 +475,13 @@ Future<void> _setThresholdDialog() async {
            _showErrorSnackbar('Error adding name: $e');
          }
       } finally {
-         if (mounted) setState(() => _isLoading = false);
+         if (mounted) setState(() { _isLoading = false; });
       }
     }
   }
 
 Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) async {
-  if (waitlistItemToPromote.isEmpty) { // Check if the spot object itself is an empty placeholder
+  if (waitlistItemToPromote.isEmpty) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('This waitlist spot is empty.')),
@@ -535,7 +489,6 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
     }
     return;
   }
-  // Check if there's actually a name to promote
   if (waitlistItemToPromote.name == null || waitlistItemToPromote.name!.trim().isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -574,28 +527,20 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
       Map<String, dynamic> currentSpots = Map<String, dynamic>.from(
           (snapshot.data() as Map<String, dynamic>)['spots'] as Map? ?? {});
 
-      // Data for the new regular spot
       Map<String, dynamic> newRegularSpotData = {
-        'name': waitlistItemToPromote.name!, // We know name is not null from earlier check
-        'isOver': false, // Default for a newly promoted spot
+        'name': waitlistItemToPromote.name!,
+        'isOver': false,
       };
-      // Only include userId if it exists for the waitlist item
       if (waitlistItemToPromote.userId != null) {
         newRegularSpotData['userId'] = waitlistItemToPromote.userId;
       }
 
       currentSpots[targetRegularSpotKey!] = newRegularSpotData;
-
-      // Remove the entry from its original waitlist spot
       currentSpots.remove(waitlistItemToPromote.spotKey);
 
-      // Also update signedUpUserIds if the promoted user had a userId
-      // This part is tricky: if they were a manual add, they weren't in signedUpUserIds.
-      // If they were a real user on waitlist, they also weren't in the main signedUpUserIds.
-      // When promoted to a regular spot, if they have a userId, they should now be added.
       Map<String, dynamic> updatePayload = {
         'spots': currentSpots,
-        'updatedAt': FieldValue.serverTimestamp(), // Good practice
+        'updatedAt': FieldValue.serverTimestamp(),
       };
 
       if (waitlistItemToPromote.userId != null) {
@@ -611,7 +556,7 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
       );
     }
   } catch (e) {
-    print("Error promoting performer: $e");
+    debugPrint("Error promoting performer: $e");
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error promoting: ${e.toString()}')),
@@ -634,16 +579,16 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
     setState(() {
       _isDrawingForSpot[spotKey] = true;
       _drawnSpotNameForAnimation[spotKey] = "Picking...";
-    _drawnSpotNameForAnimation[spotKey] = null; // Clear any previously drawn name for this spot
-    _isLoading = true;
-  });
+      _isLoading = true;
+    });
 
     await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     _revealControllerKeys[spotKey]?.currentState?.play();
 
     Map<String, dynamic>? drawnSpotData;
     String? errorMsg;
-    final scaffoldMessenger = ScaffoldMessenger.of(context); // Capture context before await
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     try {
       final firestoreProvider = context.read<FirestoreProvider>();
@@ -656,6 +601,7 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
             _drawnSpotNameForAnimation[spotKey] = drawnName;
           });
           await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
            _revealControllerKeys[spotKey]?.currentState?.play();
            await Future.delayed(const Duration(seconds: 2, milliseconds: 300));
         } else {
@@ -667,7 +613,7 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
     } finally {
        if (mounted) {
           if (errorMsg != null) {
-             scaffoldMessenger.showSnackBar( // Use captured messenger
+             scaffoldMessenger.showSnackBar(
                SnackBar(content: Text(errorMsg), backgroundColor: Colors.orange),
              );
           }
@@ -682,7 +628,7 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
   Future<void> _handleDismissPerformer(
       String spotKey, String performerId, String performerName) async {
     if (!mounted) return;
-    final scaffoldMessenger = ScaffoldMessenger.of(context); // Capture context
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
     setState(() => _isLoading = true);
     try {
       await context
@@ -690,7 +636,7 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
           .removePerformerFromSpot(widget.listId, spotKey);
     } catch (e) {
       if (mounted) {
-        scaffoldMessenger.showSnackBar( // Use captured messenger
+        scaffoldMessenger.showSnackBar(
           SnackBar(content: Text('Error removing performer: $e'), backgroundColor: Colors.red),
         );
       }
@@ -702,30 +648,26 @@ Future<void> _promoteWaitlistToRegular(SpotDisplayData waitlistItemToPromote) as
 void _onReorderRegularSpots(int oldIndex, int newIndex) {
   if (_isLoading || _isReordering) return;
 
-  // Set reordering flag to prevent stream updates from interfering
   setState(() {
     _isReordering = true;
   });
 
-  // Adjust the list locally
   if (oldIndex < newIndex) {
     newIndex -= 1;
   }
   final SpotDisplayData item = _regularSpotItems.removeAt(oldIndex);
   _regularSpotItems.insert(newIndex, item);
 
-  // Set loading state and trigger the Firestore update
   setState(() {
     _isLoading = true;
   });
 
   _updateFirestoreAfterRegularReorder().catchError((e) {
     if (mounted) {
-      // If the update fails, revert the local list and show an error
       final SpotDisplayData revertedItem = _regularSpotItems.removeAt(newIndex);
       _regularSpotItems.insert(oldIndex, revertedItem);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Failed to save order. Please try again.'), 
           backgroundColor: Colors.red
         ),
@@ -735,7 +677,7 @@ void _onReorderRegularSpots(int oldIndex, int newIndex) {
     if (mounted) {
       setState(() {
         _isLoading = false;
-        _isReordering = false; // CRITICAL: Reset the reordering flag
+        _isReordering = false;
       });
     }
   });
@@ -744,7 +686,6 @@ void _onReorderRegularSpots(int oldIndex, int newIndex) {
 
 Future<void> _updateFirestoreAfterRegularReorder() async {
   try {
-    // Get the current document to preserve all existing data
     DocumentSnapshot listSnapshot = await FirebaseFirestore.instance
         .collection('Lists')
         .doc(widget.listId)
@@ -758,23 +699,19 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
     Map<String, dynamic> existingSpots = Map<String, dynamic>.from(
         existingData['spots'] as Map? ?? {});
 
-    // Create new spots map with reordered regular spots
     Map<String, dynamic> newSpotsMap = {};
     
-    // First, add all non-regular spots (waitlist and bucket) unchanged
     existingSpots.forEach((key, value) {
       if (key.startsWith('W') || key.startsWith('B')) {
         newSpotsMap[key] = value;
       }
     });
 
-    // Then add regular spots in the new order
     for (int i = 0; i < _regularSpotItems.length; i++) {
       final spotItem = _regularSpotItems[i];
-      String newRegularKey = (i + 1).toString(); // 1-based key
+      String newRegularKey = (i + 1).toString();
 
       if (!spotItem.isEmpty && spotItem.name != null && spotItem.name!.isNotEmpty) {
-        // Preserve all existing spot data, just update the key order
         Map<String, dynamic> spotDataToSave = {
           'name': spotItem.name,
           'isOver': spotItem.isOver,
@@ -784,12 +721,10 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
         }
         newSpotsMap[newRegularKey] = spotDataToSave;
       } else {
-        // For empty spots, ensure they exist in the map
         newSpotsMap[newRegularKey] = {};
       }
     }
 
-    // Update Firestore with the complete spots map
     await FirebaseFirestore.instance
         .collection('Lists')
         .doc(widget.listId)
@@ -798,10 +733,10 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    print("Regular spots reordered successfully in Firestore.");
+    debugPrint("Regular spots reordered successfully in Firestore.");
     
   } catch (e) {
-    print("Error reordering regular spots in Firestore: $e");
+    debugPrint("Error reordering regular spots in Firestore: $e");
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -825,18 +760,18 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
     String spotLabel = isRegular ? '${displayIndex! + 1}.' : '${item.spotKey}.';
 
     String titleText;
-    Color titleColor; // Define color variable
+    Color titleColor;
     FontWeight titleWeight = FontWeight.normal;
     TextDecoration textDecoration = TextDecoration.none;
     FontStyle titleFontStyle = FontStyle.normal;
 
     if (item.isEmpty) {
       titleText = 'Available';
-      titleColor = Colors.green.shade400; // Lighter grey for dark theme
+      titleColor = Colors.green.shade400;
       titleFontStyle = FontStyle.italic;
     } else {
       titleText = item.name ?? 'Error: No Name';
-      titleColor = item.isOver ? Colors.grey.shade500 : Colors.blue.shade200; // Brighter blue for name
+      titleColor = item.isOver ? Colors.grey.shade500 : Colors.blue.shade200;
       titleWeight = FontWeight.w500;
       textDecoration = item.isOver ? TextDecoration.lineThrough : TextDecoration.none;
     }
@@ -845,7 +780,7 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
     if (item.category == SpotCategory.waitlist && !item.isEmpty && !item.isOver) {
       trailingWidget = FadeIn(
         child: IconButton(
-          icon: Icon(Icons.publish_outlined, color: Colors.green.shade300), // Brighter green
+          icon: Icon(Icons.publish_outlined, color: Colors.green.shade300),
           tooltip: 'Move to Regular Spot',
           onPressed: _isLoading ? null : () => _promoteWaitlistToRegular(item),
         ),
@@ -853,7 +788,7 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
     } else if (isRegular && !item.isEmpty && !item.isOver) {
       trailingWidget = ReorderableDragStartListener(
         index: displayIndex!,
-        child: Icon(Icons.drag_handle, color: Colors.grey.shade500), // Keep subtle drag handle
+        child: Icon(Icons.drag_handle, color: Colors.grey.shade500),
       );
     }
 
@@ -882,16 +817,16 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
       titleWidget = RandomTextReveal(
         key: _revealControllerKeys[item.spotKey],
         text: _drawnSpotNameForAnimation[item.spotKey] ?? "...",
-        duration: const Duration(seconds: 2), // Adjusted duration from previous version
+        duration: const Duration(seconds: 2),
         style: TextStyle(
-            color: Colors.yellow.shade300, // Standout color for revealed name
+            color: Colors.yellow.shade300,
             fontWeight: FontWeight.bold,
             fontSize: 16),
         curve: Curves.fastOutSlowIn,
         randomString: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
         onFinished: () {
           if (mounted && (_isDrawingForSpot[item.spotKey] ?? false)) {
-            Future.delayed(Duration(milliseconds: 3000), () {
+            Future.delayed(const Duration(milliseconds: 3000), () {
               if (mounted) {
                 setState(() {
                   _isDrawingForSpot[item.spotKey] = false;
@@ -903,11 +838,11 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
       );
       trailingWidget = SizedBox(
         width: 24, height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.secondary), // Use theme color
+        child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.secondary),
       );
     } else if (item.category == SpotCategory.bucket && item.isEmpty && !isCurrentlyDrawing) {
       titleText = '(Tap to Draw from Bucket)';
-      titleColor = Colors.teal.shade300; // Distinct color for bucket
+      titleColor = Colors.teal.shade300;
       titleFontStyle = FontStyle.italic;
       titleWidget = Text(titleText, style: TextStyle(color: titleColor, fontStyle: titleFontStyle));
     } else {
@@ -917,7 +852,7 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
     Widget listTile = ListTile(
       leading: Text(
         spotLabel,
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.grey.shade400), // Lighter for dark theme
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.grey.shade400),
       ),
       title: titleWidget,
       trailing: trailingWidget,
@@ -925,45 +860,42 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
     );
 
     Widget card = Card(
-      // key: item.itemKey, // Key is now on the Dismissible or Container wrapper
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       elevation: 2,
-      // Card color will be inherited from Theme(data: ThemeData.dark().copyWith(cardColor: ...))
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: listTile,
     );
 
-    // Logic for Dismissible (copied from your provided code, assuming it's what you want)
       if (!item.isEmpty && !item.isOver && (item.name != null && item.name!.isNotEmpty)) {
 
       return Dismissible(
-        key: item.itemKey, // Use the unique key from SpotDisplayData
+        key: item.itemKey,
         direction: DismissDirection.endToStart,
         background: Container(
           decoration: BoxDecoration(
-              color: Colors.red.shade700, // Keep dismiss color
+              color: Colors.red.shade700,
               borderRadius: BorderRadius.circular(8)),
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          padding: EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           alignment: Alignment.centerRight,
-          child: Icon(Icons.delete_sweep, color: Colors.white),
+          child: const Icon(Icons.delete_sweep, color: Colors.white),
         ),
         confirmDismiss: (direction) async {
           return await showDialog<bool>(
               context: context,
               builder: (BuildContext dialogContext) {
                 return AlertDialog(
-                  title: Text('Confirm Removal'),
+                  title: const Text('Confirm Removal'),
                   content: Text(
                       'Remove "${item.name ?? 'Performer'}" from spot $spotLabel?'),
                   actions: <Widget>[
                     TextButton(
-                        child: Text('Cancel'),
+                        child: const Text('Cancel'),
                         onPressed: () =>
                             Navigator.of(dialogContext).pop(false)),
                     TextButton(
-                        child: Text('Remove',
-                            style: TextStyle(color: Colors.red.shade300)), // Lighter red for dark theme
+                        child: const Text('Remove',
+                            style: TextStyle(color: Colors.red)),
                         onPressed: () =>
                             Navigator.of(dialogContext).pop(true)),
                   ],
@@ -977,8 +909,6 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
         child: card,
       );
     } else {
-      // Important: ReorderableListView children MUST have keys.
-      // If not dismissible, wrap the card in a Container with the key.
       return Container(key: item.itemKey, child: card);
     }
   }
@@ -986,16 +916,15 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
 
   @override
   Widget build(BuildContext context) {
-    // final Color appBarColor = Colors.blue.shade600; // Will be overridden by theme
     final timerService = context.watch<TimerService>();
 
-    Color dynamicAppBarColor = Colors.blue.shade400; // Default if not dark theme
+    Color dynamicAppBarColor = Colors.blue.shade400;
     if (Theme.of(context).brightness == Brightness.dark) {
-        dynamicAppBarColor = Colors.grey[850]!; // Dark AppBar for dark theme
+        dynamicAppBarColor = Colors.grey[850]!;
         if (timerService.isTimerRunning || timerService.isPaused) {
-            dynamicAppBarColor = Colors.indigo.shade800; // Darker Indigo for active timer in dark theme
+            dynamicAppBarColor = Colors.indigo.shade800;
         }
-    } else { // Light Theme
+    } else {
         if (timerService.isTimerRunning || timerService.isPaused) {
             dynamicAppBarColor = Colors.indigo.shade700;
         }
@@ -1004,33 +933,31 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
 
     return Theme(
       data: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: Colors.grey[900], // Darker scaffold
+        scaffoldBackgroundColor: Colors.grey[900],
         appBarTheme: AppBarTheme(
-          backgroundColor: dynamicAppBarColor, // Use dynamic color
+          backgroundColor: dynamicAppBarColor,
           elevation: 1,
-          titleTextStyle: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w500),
-          iconTheme: IconThemeData(color: Colors.white),
+          titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w500),
+          iconTheme: const IconThemeData(color: Colors.white),
         ),
-        cardColor: Colors.grey[800], // Darker cards
-        dialogBackgroundColor: Colors.grey[800],
+        cardColor: Colors.grey[800],
+        dialogTheme: DialogThemeData(backgroundColor: Colors.grey[800]),
         textTheme: Theme.of(context).textTheme.apply(
-          bodyColor: Colors.grey[300], // Lighter text for body
-          displayColor: Colors.white,   // Lighter text for display
+          bodyColor: Colors.grey[300],
+          displayColor: Colors.white,
         ),
         textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: Colors.blue.shade300) // Brighter button text
+          style: TextButton.styleFrom(foregroundColor: Colors.blue.shade300)
         ),
-        iconTheme: IconThemeData(color: Colors.grey[400]), // Default icon color
-        primaryColor: Colors.blue.shade300, // Brighter primary
+        iconTheme: const IconThemeData(color: Colors.grey),
+        primaryColor: Colors.blue.shade300,
         colorScheme: ColorScheme.dark(
           primary: Colors.blue.shade300,
-          secondary: Colors.teal.shade300, // Brighter secondary
+          secondary: Colors.teal.shade300,
           surface: Colors.grey[800]!,
-          background: Colors.grey[900]!,
           onPrimary: Colors.black,
           onSecondary: Colors.black,
           onSurface: Colors.white,
-          onBackground: Colors.white,
           onError: Colors.white,
           error: Colors.red.shade400,
         ),
@@ -1039,63 +966,58 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
         ),
         snackBarTheme: SnackBarThemeData(
           backgroundColor: Colors.grey[700],
-          contentTextStyle: TextStyle(color: Colors.white),
+          contentTextStyle: const TextStyle(color: Colors.white),
         ),
-        // Add other theme properties as needed
       ),
       child: Scaffold(
         appBar: AppBar(
-          // title: Text(_listName), // _listName is already handled by StreamBuilder in your previous code
-          // Use StreamBuilder for title as in your provided code if that's preferred
-           title: StreamBuilder<DocumentSnapshot>( // Assuming getShow returns DocumentSnapshot now
+           title: StreamBuilder<DocumentSnapshot>(
             stream: FirebaseFirestore.instance.collection('Lists').doc(widget.listId).snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                return Text('Loading List...');
+                return const Text('Loading List...');
               } else if (snapshot.hasError) {
-                return Text('Error Loading Title');
+                return const Text('Error Loading Title');
               } else if (!snapshot.hasData || !snapshot.data!.exists) {
-                return Text('List Not Found');
+                return const Text('List Not Found');
               } else {
-                // Assuming 'listName' is the field in your 'Lists' document
                 final listData = snapshot.data!.data() as Map<String, dynamic>;
                 _listName = listData['listName'] ?? 'Unnamed List';
                 return Text(_listName);
               }
             },
           ),
-          // backgroundColor: currentAppBarColor, // Handled by Theme's appBarTheme
-          // elevation: 1, // Handled by Theme
           actions: [
+            IconButton(
+              icon: const Icon(Icons.qr_code),
+              tooltip: 'Show QR Code',
+              onPressed: _showQrDialog,
+            ),
             if (_isLoading)
-              Padding(
-                padding: const EdgeInsets.only(right: 16.0),
+              const Padding(
+                padding: EdgeInsets.only(right: 16.0),
                 child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3.0))),
               )
           ],
           bottom: TimerControlBar(
-            backgroundColor: dynamicAppBarColor, // Pass dynamic color
-            onSetTotalDialog: _setTotalTimerDialog,
-            onSetThresholdDialog: _setThresholdDialog,
+            backgroundColor: dynamicAppBarColor,
+            onTapDigits: _showTimerSettingsDialog,
           ),
         ),
-        body: StreamBuilder<DocumentSnapshot>( // Changed from Show to DocumentSnapshot for direct use
+        body: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance.collection('Lists').doc(widget.listId).snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
-               return Center(child: CircularProgressIndicator());
+               return const Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
               return Center(child: Text('Error loading list data: ${snapshot.error}'));
             }
             if (!snapshot.hasData || !snapshot.data!.exists) {
-              return Center(child: Text('List not found or has been deleted.'));
+              return const Center(child: Text('List not found or has been deleted.'));
             }
 
             Map<String, dynamic> listData = snapshot.data!.data() as Map<String, dynamic>;
-            // Only rebuild display lists if not currently loading from a user action
-            // This prevents the list from flickering during Firestore save operations
-            // if the stream emits the old data briefly before the new data.
     if (!_isLoading && !_isReordering) {
       _buildDisplayLists(listData);
     }
@@ -1111,28 +1033,24 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                    child: Center(child: Text('No regular spots created.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
+                    child: Center(child: Text('No regular spots created.', style: TextStyle(color: Colors.grey.shade500))),
                   ),
                 )
               else
                 SliverReorderableList(
-                  // key: ValueKey('regular_list_${_regularSpotItems.length}'), // Optional key
                   itemBuilder: (BuildContext context, int index) {
                     final item = _regularSpotItems[index];
                     return _buildSpotTile(item, isRegular: true, displayIndex: index);
                   },
                   itemCount: _regularSpotItems.length,
                   onReorder: _isLoading ? (int o, int n) {} : _onReorderRegularSpots,
-                  // --- Apply the transparent proxyDecorator ---
                   proxyDecorator: (Widget child, int index, Animation<double> animation) {
-                    // This makes the item being dragged have a transparent background
                     return Material(
-                      color: Colors.transparent, // Set background to transparent
-                      elevation: 0, // Ensure no accidental elevation from Material
-                      child: child, // Render the original child widget
+                      color: Colors.transparent,
+                      elevation: 0,
+                      child: child,
                     );
                   },
-                  // --- End of proxyDecorator ---
                 ),
 
                     SliverToBoxAdapter(child: _buildSectionHeader('Waitlist Spots')),
@@ -1140,7 +1058,7 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
                        SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                          child: Center(child: Text('No waitlist spots created.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
+                          child: Center(child: Text('No waitlist spots created.', style: TextStyle(color: Colors.grey.shade500))),
                         ),
                       )
                     else
@@ -1159,7 +1077,7 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
                        SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                          child: Center(child: Text('No bucket spots created.', style: TextStyle(color: Colors.grey.shade500))), // Adjusted color
+                          child: Center(child: Text('No bucket spots created.', style: TextStyle(color: Colors.grey.shade500))),
                         ),
                       )
                      else
@@ -1172,12 +1090,12 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
                           childCount: _bucketSpotItems.length,
                         ),
                       ),
-                    SliverToBoxAdapter(child: SizedBox(height: 80)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 80)),
                   ],
                 );
               },
             ),
           ),
         );
-      }
-    }
+  }
+}

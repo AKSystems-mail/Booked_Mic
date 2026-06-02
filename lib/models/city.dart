@@ -1,21 +1,17 @@
-// models/city.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class City {
   final String? id;
-  final String name;
-  final String state;
+  final String cityName;
 
   City({
     this.id,
-    required this.name,
-    required this.state,
+    required this.cityName,
   });
 
   Map<String, dynamic> toMap() {
     return {
-      'name': name,
-      'state': state,
+      'cityName': cityName,
     };
   }
 
@@ -23,8 +19,7 @@ class City {
     Map data = doc.data() as Map<String, dynamic>;
     return City(
       id: doc.id,
-      name: data['name'],
-      state: data['state'],
+      cityName: data['cityName'] ?? '',
     );
   }
 }

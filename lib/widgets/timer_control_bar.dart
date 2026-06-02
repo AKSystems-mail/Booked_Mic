@@ -6,22 +6,28 @@ import 'package:myapp/providers/flashlight_service.dart';
 
 class TimerControlBar extends StatelessWidget implements PreferredSizeWidget {
   final Color backgroundColor;
-  final VoidCallback onSetTotalDialog; // Callback to show dialog in parent
-  final VoidCallback onSetThresholdDialog; // Callback to show dialog in parent
+  final VoidCallback onTapDigits;
 
   const TimerControlBar({
     super.key,
     required this.backgroundColor,
-    required this.onSetTotalDialog,
-    required this.onSetThresholdDialog,
+    required this.onTapDigits,
   });
+
+  Color _digitColor(TimerService service) {
+    final remaining = service.remainingSecondsNotifier.value;
+    final threshold = service.lightThresholdSeconds;
+    final running = service.isTimerRunning;
+
+    if (remaining <= 0) return Colors.red.shade500;
+    if (running && remaining <= threshold) return Colors.orange.shade400;
+    return Colors.white;
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Use watch only where necessary to trigger rebuilds
     final timerService = context.watch<TimerService>();
     final flashlightService = context.watch<FlashlightService>();
-    final Color timerColor = Colors.white; // Example color
 
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
@@ -29,7 +35,6 @@ class TimerControlBar extends StatelessWidget implements PreferredSizeWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Play/Pause Button
           IconButton(
             icon: Icon(
               timerService.isTimerRunning
@@ -37,54 +42,36 @@ class TimerControlBar extends StatelessWidget implements PreferredSizeWidget {
                   : Icons.play_circle_filled,
               size: 30,
             ),
-            color: timerColor,
+            color: Colors.white,
             tooltip: timerService.isTimerRunning ? 'Pause Timer' : 'Start Timer',
-            // Use read for actions that don't need to listen to state changes directly
             onPressed: timerService.isTimerRunning
                 ? () => context.read<TimerService>().pauseTimer()
                 : () => context.read<TimerService>().startTimer(),
           ),
 
-          // Timer Display (using ValueListenableBuilder for efficiency)
-          ValueListenableBuilder<int>(
-            valueListenable: timerService.remainingSecondsNotifier,
-            builder: (context, remainingSeconds, child) => Text(
-              timerService.formatDuration(remainingSeconds),
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: timerColor,
-                fontFamily: 'monospace',
+          GestureDetector(
+            onTap: onTapDigits,
+            child: ValueListenableBuilder<int>(
+              valueListenable: timerService.remainingSecondsNotifier,
+              builder: (context, remainingSeconds, child) => Text(
+                timerService.formatDuration(remainingSeconds),
+                style: TextStyle(
+                  fontSize: 36,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace',
+                  color: _digitColor(timerService),
+                ),
               ),
             ),
           ),
 
-          // Reset Button
           IconButton(
             icon: Icon(Icons.replay, size: 28),
-            color: timerColor,
+            color: Colors.white,
             tooltip: 'Reset Timer',
             onPressed: () => context.read<TimerService>().resetAndStopTimer(),
           ),
 
-          // Set Total Duration Button
-          IconButton(
-            icon: Icon(Icons.timer_outlined, size: 28),
-            color: timerColor,
-            tooltip: 'Set Total Duration',
-            onPressed: onSetTotalDialog, // Trigger dialog in parent
-          ),
-
-          // Set Threshold Button
-          IconButton(
-            icon: Icon(Icons.alarm_add_outlined, size: 28),
-            color: timerColor,
-            // Tooltip shows current threshold from service
-            tooltip: 'Set Light Threshold (${timerService.lightThresholdSeconds}s)',
-            onPressed: onSetThresholdDialog, // Trigger dialog in parent
-          ),
-
-          // Flashlight Toggle Button
           IconButton(
             icon: Icon(
               flashlightService.isFlashlightOn
@@ -92,7 +79,7 @@ class TimerControlBar extends StatelessWidget implements PreferredSizeWidget {
                   : Icons.flashlight_off_outlined,
               size: 28,
             ),
-            color: flashlightService.isFlashlightOn ? Colors.yellowAccent : timerColor,
+            color: flashlightService.isFlashlightOn ? Colors.yellowAccent : Colors.white,
             tooltip: flashlightService.isFlashlightOn
                 ? 'Turn Flashlight Off'
                 : 'Turn Flashlight On',
@@ -104,5 +91,5 @@ class TimerControlBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   @override
-  Size get preferredSize => const Size.fromHeight(50.0);
+  Size get preferredSize => const Size.fromHeight(44.0);
 }

@@ -14,11 +14,19 @@
       },
       "oauth_client": [
         {
-          "client_id": "1049808440381-fmogcudramlhoaoivphm7ffb6po7k8os.apps.googleusercontent.com",
+          "client_id": "1049808440381-1ikq6st4cp7e2m775e4omdbihnk0dhol.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.bookedmic.app",
-            "certificate_hash": "400de3db3d4ee513b99308faf2f2569f6aac11ab"
+            "certificate_hash": "8223aaed2656285ab4c91693aed7167eb41ef0ed"
+          }
+        },
+        {
+          "client_id": "1049808440381-95qn6q87buet13ditqpn6pq42uagrl4b.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.bookedmic.app",
+            "certificate_hash": "63c27aaa2e5d53ff3c4e69213ee85f727cd1c6ad"
           }
         },
         {
@@ -37,35 +45,13 @@
             {
               "client_id": "1049808440381-5urihcc0q51vcqt1h4ikgg3acp64tdrs.apps.googleusercontent.com",
               "client_type": 3
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:1049808440381:android:ae8a666867df29db70ee54",
-        "android_client_info": {
-          "package_name": "com.bookedmic.app"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "1049808440381-5urihcc0q51vcqt1h4ikgg3acp64tdrs.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyDopcXm8vBWAsK35NupkSD3Hm0153bHFX0"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
+            },
             {
-              "client_id": "1049808440381-5urihcc0q51vcqt1h4ikgg3acp64tdrs.apps.googleusercontent.com",
-              "client_type": 3
+              "client_id": "1049808440381-7gebkrrqo9v96chlqob7ukm3oj592fkf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.kennedyai.bookedmic"
+              }
             }
           ]
         }
