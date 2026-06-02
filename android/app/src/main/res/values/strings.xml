@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="up_next_desc">Track your position in the performance queue.</string>
+    <string name="nearby_mics_desc">See how many open mics are active nearby.</string>
+</resources>

@@ -37,6 +37,7 @@ class BmicAppState extends ChangeNotifier {
       int performerIndex = snapshot.docs.indexWhere((doc) => doc.id == _performerId);
       if (performerIndex != -1) {
         int performersAhead = performerIndex;
+        if (!context.mounted) return;
         // Show snackbar notification
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$performersAhead performers ahead of you')),

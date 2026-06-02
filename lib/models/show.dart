@@ -1,193 +1,103 @@
-// lib/models/show.dart
+// models/show.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:myapp/models/spot.dart';
 
 class Show {
-  final String id;
+  final String? id;
+  final String? userId; // Added userId field
   final String showName;
   final DateTime date;
-  final String address;
-  final String normalizedAddress;
+  final String location;
+  final String city;
   final String state;
-  final double? latitude;
-  final double? longitude;
-  final int numberOfSpots;
+  final int spots;
+  final List<String> reservedSpots;
   final bool bucketSpots;
-  final int numberOfWaitlistSpots;
-  final int numberOfBucketSpots;
+  final int waitListSpots;
+  final List<Spot> waitList;
+  final List<Spot> spotsList;
+  final List<String> bucketNames;
   final DateTime? cutoffDate;
-  final String userId;
-  final Timestamp? createdAt;
-  final Map<String, dynamic> spots;
-  final List<String> signedUpUserIds;
-  final bool isSearchable;
-  final String? guestHostStageName; // <-- ADD THIS NEW FIELD
-
-  
-  // New fields for guest host functionality
-  final String? guestHostId;
-  final String? guestHostEmail;
-  final bool isGuestHostActive;
+  final TimeOfDay? cutoffTime;
 
   Show({
-    required this.id,
+    this.id,
+    this.userId,
     required this.showName,
     required this.date,
-    required this.address,
-    required this.normalizedAddress,
+    required this.location,
+    required this.city,
     required this.state,
-    this.latitude,
-    this.longitude,
-    required this.numberOfSpots,
-    required this.bucketSpots,
-    required this.numberOfWaitlistSpots,
-    required this.numberOfBucketSpots,
-    this.cutoffDate,
-    required this.userId,
-    this.createdAt,
     required this.spots,
-    required this.signedUpUserIds,
-    this.isSearchable = true,
-    // Initialize new fields
-    this.guestHostId,
-    this.guestHostEmail,
-    this.isGuestHostActive = false,
-    this.guestHostStageName, // <-- ADD TO CONSTRUCTOR
-
+    required this.reservedSpots,
+    required this.bucketSpots,
+    required this.waitListSpots,
+    required this.waitList,
+    required this.spotsList,
+    required this.bucketNames,
+    this.cutoffDate,
+    this.cutoffTime,
   });
 
-  factory Show.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>? ?? {};
-
-    DateTime parsedDate;
-    if (data['date'] is Timestamp) {
-      parsedDate = (data['date'] as Timestamp).toDate();
-    } else if (data['date'] is String) {
-      parsedDate = DateTime.tryParse(data['date']) ?? DateTime.now();
-    } else {
-      parsedDate = DateTime.now();
-    }
-
-    DateTime? parsedCutoffDate;
-    if (data['cutoffDate'] is Timestamp) {
-      parsedCutoffDate = (data['cutoffDate'] as Timestamp).toDate();
-    } else if (data['cutoffDate'] is String) {
-      parsedCutoffDate = DateTime.tryParse(data['cutoffDate']);
-    }
-
-    return Show(
-      id: doc.id,
-      showName: data['listName'] ?? '',
-      date: parsedDate,
-      address: data['address'] ?? '',
-      normalizedAddress: data['normalizedAddress'] ??
-          (data['address'] ?? '').trim().toLowerCase(),
-      state: data['state'] ?? '',
-      latitude: (data['latitude'] as num?)?.toDouble(),
-      longitude: (data['longitude'] as num?)?.toDouble(),
-      numberOfSpots: data['numberOfSpots'] ?? 0,
-      bucketSpots: data['bucketSpots'] ?? false,
-      numberOfWaitlistSpots: data['numberOfWaitlistSpots'] ?? 0,
-      numberOfBucketSpots: data['numberOfBucketSpots'] ?? 0,
-      cutoffDate: parsedCutoffDate,
-      userId: data['userId'] ?? '',
-      createdAt: data['createdAt'] as Timestamp?,
-      spots: Map<String, dynamic>.from(data['spots'] ?? {}),
-      signedUpUserIds: List<String>.from(data['signedUpUserIds'] ?? []),
-      isSearchable: data['isSearchable'] ?? true,
-      // New fields with fallback values
-      guestHostId: data['guestHostId'],
-      guestHostEmail: data['guestHostEmail'],
-      isGuestHostActive: data['isGuestHostActive'] ?? false,
-      guestHostStageName: data['guestHostStageName'],
-    );
-  }
-
   Map<String, dynamic> toMap() {
-    Map<String, dynamic> map = {
-      'listName': showName,
-      'date': Timestamp.fromDate(date),
-      'address': address,
-      'normalizedAddress': normalizedAddress.trim().toLowerCase(),
-      'state': state,
-      'numberOfSpots': numberOfSpots,
-      'bucketSpots': bucketSpots,
-      'numberOfWaitlistSpots': numberOfWaitlistSpots,
-      'numberOfBucketSpots': numberOfBucketSpots,
+    return {
+      'id': id,
       'userId': userId,
+      'showName': showName,
+      'listName': showName, // Compatibility with 'Lists' collection
+      'date': Timestamp.fromDate(date),
+      'location': location,
+      'city': city,
+      'state': state,
       'spots': spots,
-      'signedUpUserIds': signedUpUserIds,
-      'isSearchable': isSearchable,
-      // Include new fields in Firestore document
-      'isGuestHostActive': isGuestHostActive,
-      'guestHostStageName': guestHostStageName,
+      'numberOfSpots': spots, // Compatibility
+      'reservedSpots': reservedSpots,
+      'bucketSpots': bucketSpots,
+      'waitListSpots': waitListSpots,
+      'numberOfWaitlistSpots': waitListSpots, // Compatibility
+      'waitList': waitList.map((item) => item.toJson()).toList(),
+      'spotsList': spotsList.map((item) => item.toJson()).toList(),
+      'bucketNames': bucketNames,
+      'cutoffDate': cutoffDate != null ? Timestamp.fromDate(cutoffDate!) : null,
+      'cutoffTime': cutoffTime != null
+          ? Timestamp.fromDate(DateTime(
+              date.year,
+              date.month,
+              date.day,
+              cutoffTime!.hour,
+              cutoffTime!.minute,
+            ))
+          : null,
     };
-
-    // Only include guest host fields if they have values
-    if (guestHostId != null) map['guestHostId'] = guestHostId;
-    if (guestHostEmail != null) map['guestHostEmail'] = guestHostEmail;
-    if (latitude != null) map['latitude'] = latitude;
-    if (longitude != null) map['longitude'] = longitude;
-    if (cutoffDate != null) map['cutoffDate'] = Timestamp.fromDate(cutoffDate!);
-
-    return map;
   }
 
-  // Helper method to check if a user can edit this show
-  bool canUserEdit(String userId) {
-    return userId == this.userId || userId == guestHostId;
+  factory Show.fromFirestore(DocumentSnapshot doc) {
+    return Show.fromMap(doc.id, doc.data() as Map<String, dynamic>);
   }
 
-  // Helper method to check if a user can delete this show
-  bool canUserDelete(String userId) {
-    return userId == this.userId;
-  }
-
-  // Create a copyWith method for easier updates
-  Show copyWith({
-    String? id,
-    String? showName,
-    DateTime? date,
-    String? address,
-    String? normalizedAddress,
-    String? state,
-    double? latitude,
-    double? longitude,
-    int? numberOfSpots,
-    bool? bucketSpots,
-    int? numberOfWaitlistSpots,
-    int? numberOfBucketSpots,
-    DateTime? cutoffDate,
-    String? userId,
-    Timestamp? createdAt,
-    Map<String, dynamic>? spots,
-    List<String>? signedUpUserIds,
-    bool? isSearchable,
-    String? guestHostId,
-    String? guestHostEmail,
-    bool? isGuestHostActive,
-  }) {
+  factory Show.fromMap(String id, Map<String, dynamic> data) {
     return Show(
-      id: id ?? this.id,
-      showName: showName ?? this.showName,
-      date: date ?? this.date,
-      address: address ?? this.address,
-      normalizedAddress: normalizedAddress ?? this.normalizedAddress,
-      state: state ?? this.state,
-      latitude: latitude ?? this.latitude,
-      longitude: longitude ?? this.longitude,
-      numberOfSpots: numberOfSpots ?? this.numberOfSpots,
-      bucketSpots: bucketSpots ?? this.bucketSpots,
-      numberOfWaitlistSpots: numberOfWaitlistSpots ?? this.numberOfWaitlistSpots,
-      numberOfBucketSpots: numberOfBucketSpots ?? this.numberOfBucketSpots,
-      cutoffDate: cutoffDate ?? this.cutoffDate,
-      userId: userId ?? this.userId,
-      createdAt: createdAt ?? this.createdAt,
-      spots: spots ?? this.spots,
-      signedUpUserIds: signedUpUserIds ?? this.signedUpUserIds,
-      isSearchable: isSearchable ?? this.isSearchable,
-      guestHostId: guestHostId ?? this.guestHostId,
-      guestHostEmail: guestHostEmail ?? this.guestHostEmail,
-      isGuestHostActive: isGuestHostActive ?? this.isGuestHostActive,
+      id: id,
+      userId: data['userId'] as String?,
+      showName: (data['showName'] ?? data['listName'] ?? 'Unnamed List') as String,
+      date: (data['date'] as Timestamp).toDate(),
+      location: (data['location'] ?? data['address'] ?? '') as String,
+      city: data['city'] ?? '',
+      state: data['state'] ?? '',
+      spots: (data['spots'] ?? data['numberOfSpots'] ?? 0) as int,
+      reservedSpots: List<String>.from(data['reservedSpots'] ?? []),
+      bucketSpots: (data['bucketSpots'] ?? (data['numberOfBucketSpots'] ?? 0) > 0),
+      waitListSpots: (data['waitListSpots'] ?? data['numberOfWaitlistSpots'] ?? 0) as int,
+      waitList: (data['waitList'] as List<dynamic>? ?? []).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(),
+      spotsList: (data['spotsList'] as List<dynamic>? ?? []).map((item) => Spot.fromMap(item as Map<String, dynamic>)).toList(),
+      bucketNames: List<String>.from(data['bucketNames'] ?? []),
+      cutoffDate: (data['cutoffDate'] as Timestamp?)?.toDate(),
+      cutoffTime: data['cutoffTime'] != null
+          ? TimeOfDay(
+              hour: (data['cutoffTime'] as Timestamp).toDate().hour,
+              minute: (data['cutoffTime'] as Timestamp).toDate().minute)
+          : null,
     );
   }
 }

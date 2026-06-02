@@ -16,6 +16,7 @@ class RoleSelectionScreen extends StatelessWidget {
   Future<void> _selectRole(BuildContext context, String role) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_role', role);
+    if (!context.mounted) return;
 
     // Use pushReplacement to remove RoleSelectionScreen from the stack
     if (role == 'host') {
@@ -34,7 +35,9 @@ class RoleSelectionScreen extends StatelessWidget {
   Future<void> _performSignOut(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_role'); // Clear role on sign out
+    await prefs.remove('last_known_uid'); // Clear cached UID
     await FirebaseAuth.instance.signOut();
+    if (!context.mounted) return;
     // Navigate back to registration after sign out, clearing the stack
     Navigator.pushAndRemoveUntil(
       context,
@@ -121,6 +124,7 @@ class RoleSelectionScreen extends StatelessWidget {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('user_role'); // Clear role on account deletion
+      await prefs.remove('last_known_uid'); // Clear cached UID
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Account and associated data deleted successfully.')),
@@ -177,17 +181,21 @@ class RoleSelectionScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     // Colors from reference style
     final Color appBarColor = Colors.blue.shade400;
-    final Color buttonColor = const Color.fromARGB(255, 108, 28, 133);
+    final Color hostButtonColor = Colors.purple.shade800;
+    final Color performerButtonColor = Colors.blue.shade700;
 
     return Scaffold(
       appBar: AppBar(
-        // Apply reference style
         backgroundColor: appBarColor,
         elevation: 0,
         foregroundColor: Colors.white,
-        title: const Text('Select Your Role'),
-        automaticallyImplyLeading: false, // Keep back button removed as per previous logic
-        actions: [ // Keep Sign Out Button
+        title: const Text(
+          'Booked Mic',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        centerTitle: true,
+        automaticallyImplyLeading: false,
+        actions: [
           Tooltip(
             message: 'Sign Out',
             child: IconButton(
@@ -197,10 +205,9 @@ class RoleSelectionScreen extends StatelessWidget {
           ),
         ],
       ),
-      // Apply gradient background from reference
       body: Container(
-        width: double.infinity, // Ensure gradient fills width
-        height: double.infinity, // Ensure gradient fills height
+        width: double.infinity,
+        height: double.infinity,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topRight,
@@ -208,7 +215,6 @@ class RoleSelectionScreen extends StatelessWidget {
             colors: [Colors.blue.shade200, Colors.purple.shade100],
           ),
         ),
-        // Original content goes inside the gradient container
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(30.0),
@@ -217,47 +223,42 @@ class RoleSelectionScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 FadeInDown(
-                  duration: const Duration(milliseconds: 400),
-                  child: Text(
-                    'Booked Mic',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.black.withOpacity(0.8)),
-                  ),
-                ),
-                const SizedBox(height: 20), // Add some space
-                // Apply FadeInDown to introductory text
-                FadeInDown(
                   duration: const Duration(milliseconds: 500),
                   child: Text(
-                    'Are you Hosting or Performing?',
+                    'Welcome! Choose your role:',
                     textAlign: TextAlign.center,
-                    // Style text to be visible on gradient
-                    style: TextStyle(fontSize: 18, color: Colors.black.withOpacity(0.7)),
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black.withValues(alpha: 0.7)),
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 50),
 
-                // Apply FadeInDown sequentially to buttons
                 FadeInDown(
                   duration: const Duration(milliseconds: 600),
                   child: Column(
                     children: [
-                      CircleAvatar(
-                        radius: 50, // Adjust the size as needed
-                        backgroundColor: buttonColor,
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.mic_external_on,
-                            color: Colors.white,
-                            size: 40, // Adjust the size as needed
+                      GestureDetector(
+                        onTap: () => _selectRole(context, 'host'),
+                        child: Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            color: hostButtonColor,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          onPressed: () => _selectRole(context, 'host'),
+                          child: const Icon(Icons.mic_external_on, color: Colors.white, size: 50),
                         ),
                       ),
                       const SizedBox(height: 10),
                       Text(
                         'Host',
-                        style: TextStyle(color: buttonColor, fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(color: hostButtonColor, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -268,22 +269,29 @@ class RoleSelectionScreen extends StatelessWidget {
                   duration: const Duration(milliseconds: 700),
                   child: Column(
                     children: [
-                      CircleAvatar(
-                        radius: 50, // Adjust the size as needed
-                        backgroundColor: buttonColor,
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.emoji_people_outlined,
-                            color: Colors.white,
-                            size: 40, // Adjust the size as needed
+                      GestureDetector(
+                        onTap: () => _selectRole(context, 'performer'),
+                        child: Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            color: performerButtonColor,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          onPressed: () => _selectRole(context, 'performer'),
+                          child: const Icon(Icons.person_search, color: Colors.white, size: 50),
                         ),
                       ),
                       const SizedBox(height: 10),
                       Text(
                         'Performer',
-                        style: TextStyle(color: buttonColor, fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(color: performerButtonColor, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),

@@ -1,29 +1,26 @@
-// lib/pages/performer_screens/performer_list_screen.dart
+// lib/performer_screens/performer_list_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
-import 'package:intl/intl.dart'; // Import DateFormat
+import 'package:intl/intl.dart'; 
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:io' show Platform; // To check the platform
+import 'dart:io' show Platform; 
 
 // Import necessary screens
-import '../../role_selection_screen.dart';
+import '../role_selection_screen.dart';
 import 'signup_screen.dart';
-import '../../registration_screen.dart';
-
-// bool _isListSearchable = true;
+import '../registration_screen.dart';
 
 class PerformerListScreen extends StatefulWidget {
-  PerformerListScreen({Key? key}) : super(key: key);
+  const PerformerListScreen({super.key});
 
   @override
-  _PerformerListScreenState createState() => _PerformerListScreenState();
+  State<PerformerListScreen> createState() => _PerformerListScreenState();
 }
 
 class _PerformerListScreenState extends State<PerformerListScreen> {
@@ -31,65 +28,19 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   String? _selectedSearchState;
-    static const String _lastSelectedStateKey = 'last_selected_search_state'; // Key for SharedPreferences
+    static const String _lastSelectedStateKey = 'last_selected_search_state'; 
   final List<String> usStates = [
-    'AL',
-    'AK',
-    'AZ',
-    'AR',
-    'CA',
-    'CO',
-    'CT',
-    'DE',
-    'FL',
-    'GA',
-    'HI',
-    'ID',
-    'IL',
-    'IN',
-    'IA',
-    'KS',
-    'KY',
-    'LA',
-    'ME',
-    'MD',
-    'MA',
-    'MI',
-    'MN',
-    'MS',
-    'MO',
-    'MT',
-    'NE',
-    'NV',
-    'NH',
-    'NJ',
-    'NM',
-    'NY',
-    'NC',
-    'ND',
-    'OH',
-    'OK',
-    'OR',
-    'PA',
-    'RI',
-    'SC',
-    'SD',
-    'TN',
-    'TX',
-    'UT',
-    'VT',
-    'VA',
-    'WA',
-    'WV',
-    'WI',
-    'WY',
-    'DC'
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+    'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
   ];
 
   @override
   void initState() {
     super.initState();
-    _loadLastSelectedState(); // Load on init
+    _loadLastSelectedState(); 
   }
 
   @override
@@ -101,9 +52,10 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_role');
     if (!mounted) return;
-    Navigator.pushReplacement(
+    Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => RoleSelectionScreen()),
+      MaterialPageRoute(builder: (context) => const RoleSelectionScreen()),
+      (route) => false,
     );
   }
 
@@ -111,7 +63,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     final prefs = await SharedPreferences.getInstance();
     final String? lastState = prefs.getString(_lastSelectedStateKey);
     if (lastState != null && mounted) {
-
+       // setState(() { _selectedSearchState = lastState; });
     }
   }
 
@@ -124,17 +76,14 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     final prefs = await SharedPreferences.getInstance();
     String? previouslySelectedState = prefs.getString(_lastSelectedStateKey);
 
-    // Local state for the dialog's search functionality
     String searchQuery = '';
-    List<String> filteredStates = List.from(usStates); // Start with all states
+    List<String> filteredStates = List.from(usStates);
 
     final String? result = await showDialog<String>(
       context: context,
       builder: (BuildContext dialogContext) {
-        // Use StatefulBuilder to allow updating the dialog's content (filtered list)
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            // Filter states based on searchQuery
             if (searchQuery.isEmpty) {
               filteredStates = List.from(usStates);
             } else {
@@ -144,12 +93,12 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
             }
 
             return AlertDialog(
-              backgroundColor: Colors.white.withOpacity(0.98), // Slightly more opaque
+              backgroundColor: Colors.white.withValues(alpha: 0.98),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               title: Text('Search State', style: TextStyle(color: Theme.of(context).primaryColor)),
               content: SizedBox(
                 width: double.maxFinite,
-                height: MediaQuery.of(context).size.height * 0.7, // Increased height a bit
+                height: MediaQuery.of(context).size.height * 0.7,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
@@ -161,10 +110,10 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                           hintText: 'Type to search states...', 
                           prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                         ),
                         onChanged: (value) {
-                          setDialogState(() { // Update dialog state to re-filter
+                          setDialogState(() {
                             searchQuery = value;
                           });
                         },
@@ -187,7 +136,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                                       color: isPreviouslySelected ? Theme.of(context).primaryColor : Colors.black87,
                                     ),
                                   ),
-                                  tileColor: isPreviouslySelected ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+                                  tileColor: isPreviouslySelected ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : null,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   onTap: () => Navigator.of(dialogContext).pop(state),
                                 );
@@ -209,13 +158,13 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
       },
     );
 
-    if (result != null) { // Only update if a state was actually selected
-      if (result != _selectedSearchState) { // And if it's different from current search
+    if (result != null) {
+      if (result != _selectedSearchState) {
         setState(() {
           _selectedSearchState = result;
         });
       }
-      await _saveLastSelectedState(result); // Save the newly selected state
+      await _saveLastSelectedState(result);
     }
   }
 
@@ -230,79 +179,82 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   }
 
   Future<void> _launchMaps(String address) async {
-  if (address.isEmpty) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Address is not available.')),
-      );
-    }
-    return;
-  }
-
-  // Log the address being used
-  String query = Uri.encodeComponent(address);
-
-  Uri? platformSpecificUri;
-  bool launchedSuccessfully = false;
-
-  if (Platform.isAndroid) {
-    platformSpecificUri = Uri.parse('geo:0,0?q=$query');
-  } else if (Platform.isIOS) {
-    platformSpecificUri = Uri.parse('maps://maps.apple.com/?q=$query');
-  }
-
-  // Try platform-specific URI first
-  if (platformSpecificUri != null) {
-    try {
-      if (await canLaunchUrl(platformSpecificUri)) {
-        await launchUrl(platformSpecificUri);
-        launchedSuccessfully = true;
-      } else {
+    if (address.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Address is not available.')),
+        );
       }
-    } catch (e) {
+      return;
     }
-  }
 
-  // If platform-specific launch failed or wasn't applicable, try web fallback
-  if (!launchedSuccessfully) {
-    Uri webMapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
-    try {
-      // For web, we often don't need to check canLaunchUrl for https if a browser is expected.
-      // But it's safer to keep it.
-      if (await canLaunchUrl(webMapUri)) {
-        await launchUrl(webMapUri, mode: LaunchMode.externalApplication);
-        launchedSuccessfully = true;
-      } else {
+    String query = Uri.encodeComponent(address);
+    Uri? platformSpecificUri;
+    bool launchedSuccessfully = false;
+
+    // Use standard platform schemes
+    if (Platform.isAndroid) {
+      platformSpecificUri = Uri.parse('geo:0,0?q=$query');
+    } else if (Platform.isIOS) {
+      platformSpecificUri = Uri.parse('maps://?q=$query'); // Corrected Apple Maps scheme
+    }
+
+    // Try to open the native map application directly
+    if (platformSpecificUri != null) {
+      try {
+        // Direct launch attempt bypassing canLaunchUrl
+        launchedSuccessfully = await launchUrl(
+          platformSpecificUri,
+          mode: LaunchMode.externalNonBrowserApplication,
+        );
+      } catch (e) {
+        debugPrint("Error launching native maps app: $e");
       }
-    } catch (e) {
-      print("Error launching web fallback URI ($webMapUri): $e");
+    }
+
+    // Fallback: If native deep link fails or is unsupported, launch web maps
+    if (!launchedSuccessfully) {
+      Uri fallbackUri;
+      if (Platform.isIOS) {
+        // Universal web link that Apple devices intercept to open Apple Maps
+        fallbackUri = Uri.parse('https://maps.apple.com/?q=$query');
+      } else {
+        // Universal web link for Google Maps on Android
+        fallbackUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+      }
+
+      try {
+        launchedSuccessfully = await launchUrl(
+          fallbackUri,
+          mode: LaunchMode.externalApplication,
+        );
+      } catch (e) {
+        debugPrint("Error launching web fallback maps: $e");
+      }
+    }
+
+    if (!launchedSuccessfully) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open maps app or website.')),
+        );
+      }
     }
   }
-
-  if (!launchedSuccessfully) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open maps app or website.')),
-      );
-    }
-  }
-}
-
 
   Widget _buildListSection(BuildContext context, String title, List<DocumentSnapshot> docs, bool showSpotNumber) {
-     if (docs.isEmpty) {
-        return const SizedBox.shrink();
-     }
+     if (docs.isEmpty) return const SizedBox.shrink();
+     
      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
            Padding(
              padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
-             child: Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.black.withAlpha(200))),
+             child: Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.black.withValues(alpha: 0.8))),
            ),
            ListView.builder(
              shrinkWrap: true,
-             physics: NeverScrollableScrollPhysics(),
+             physics: const NeverScrollableScrollPhysics(),
              itemCount: docs.length,
              itemBuilder: (context, index) {
                final doc = docs[index];
@@ -334,8 +286,8 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                  delay: Duration(milliseconds: 100 * index),
                  duration: const Duration(milliseconds: 400),
                  child: Card(
-                   color: Colors.white.withAlpha((255 * 0.9).round()),
-                   elevation: 3, margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+                   color: Colors.white.withValues(alpha: 0.9),
+                   elevation: 3, margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                    child: ListTile(
                      title: Text(
@@ -346,7 +298,6 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                         ),
                         overflow: TextOverflow.ellipsis,
                      ),
-                     // --- MODIFIED SUBTITLE TO INCLUDE MAP ICON ---
                      subtitle: Row(
                        children: [
                          Expanded(
@@ -355,19 +306,16 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                              overflow: TextOverflow.ellipsis,
                            ),
                          ),
-                         // Only show map icon if address is not 'No Address Provided' and not empty
                          if (addressText != 'No Address Provided' && addressText.trim().isNotEmpty)
                            Padding(
                              padding: const EdgeInsets.only(left: 8.0),
                              child: IconButton(
-                               icon: Icon(Icons.directions_outlined, color: Theme.of(context).primaryColor), // Or Icons.map_outlined
+                               icon: Icon(Icons.directions_outlined, color: Theme.of(context).primaryColor),
                                iconSize: 22.0,
                                padding: EdgeInsets.zero,
-                               constraints: BoxConstraints(), // To make the tap area tighter
+                               constraints: const BoxConstraints(),
                                tooltip: 'Get Directions',
-                               onPressed: () {
-                                 _launchMaps(addressText);
-                               },
+                               onPressed: () => _launchMaps(addressText),
                              ),
                            ),
                        ],
@@ -379,10 +327,10 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                          if (formattedDate.isNotEmpty)
                            Text(
                              formattedDate,
-                             style: TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w500),
+                             style: const TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w500),
                            ),
                          if (formattedDate.isNotEmpty && displayStatus.isNotEmpty)
-                           SizedBox(height: 4.0),
+                           const SizedBox(height: 4.0),
                          Text(
                            displayStatus,
                            style: TextStyle(
@@ -404,11 +352,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   }
 
   Widget _buildMySignupsView() {
-    if (currentUserId == null) {
-      return Center(
-          child:
-              Text("Not logged in.", style: TextStyle(color: Colors.black54)));
-    }
+    if (currentUserId == null) return Center(child: Text("Not logged in.", style: TextStyle(color: Colors.black54)));
 
     final onListStream = _firestore
         .collection('Lists')
@@ -422,51 +366,29 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
         .snapshots();
 
     return ListView(
-      padding: EdgeInsets.only(bottom: 80.0),
+      padding: const EdgeInsets.only(bottom: 80.0),
       children: [
         StreamBuilder<QuerySnapshot>(
             stream: onListStream,
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  !snapshot.hasData) {
-                return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(
-                        child: CircularProgressIndicator(
-                            color: Colors.blue.shade600)));
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
               }
               if (snapshot.hasError) {
-                return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(
-                        child: Text('Error loading lists: ${snapshot.error}',
-                            style: TextStyle(color: Colors.red.shade900))));
+                return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading lists: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900))));
               }
-
-              return _buildListSection(
-                  context, "Lists You're On", snapshot.data?.docs ?? [], true);
+              return _buildListSection(context, "Lists You're On", snapshot.data?.docs ?? [], true);
             }),
         StreamBuilder<QuerySnapshot>(
             stream: bucketSignupsStream,
             builder: (context, bucketSnapshot) {
-              if (bucketSnapshot.connectionState == ConnectionState.waiting &&
-                  !bucketSnapshot.hasData) {
-                return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(
-                        child: CircularProgressIndicator(
-                            color: Colors.blue.shade600)));
+              if (bucketSnapshot.connectionState == ConnectionState.waiting && !bucketSnapshot.hasData) {
+                return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
               }
               if (bucketSnapshot.hasError) {
-                return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(
-                        child: Text(
-                            'Error loading bucket signups: ${bucketSnapshot.error}',
-                            style: TextStyle(color: Colors.red.shade900))));
+                return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading bucket signups: ${bucketSnapshot.error}', style: TextStyle(color: Colors.red.shade900))));
               }
-              if (!bucketSnapshot.hasData || bucketSnapshot.data!.docs.isEmpty)
-                return SizedBox.shrink();
+              if (!bucketSnapshot.hasData || bucketSnapshot.data!.docs.isEmpty) return const SizedBox.shrink();
 
               final List<String> bucketListIds = bucketSnapshot.data!.docs
                   .map((doc) => doc.reference.parent.parent?.id)
@@ -475,50 +397,30 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                   .toSet()
                   .toList();
 
-              if (bucketListIds.isEmpty) return SizedBox.shrink();
+              if (bucketListIds.isEmpty) return const SizedBox.shrink();
 
               return FutureBuilder<List<DocumentSnapshot>>(
-                  future: bucketListIds.isNotEmpty
-                      ? Future.wait(bucketListIds.map(
-                          (id) => _firestore.collection('Lists').doc(id).get()))
-                      : Future.value([]),
+                  future: Future.wait(bucketListIds.map((id) => _firestore.collection('Lists').doc(id).get())),
                   builder: (context, listDocsSnapshot) {
-                    if (listDocsSnapshot.connectionState ==
-                            ConnectionState.waiting &&
-                        !listDocsSnapshot.hasData) {
-                      return Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Center(
-                              child: CircularProgressIndicator(
-                                  color: Colors.blue.shade600)));
+                    if (listDocsSnapshot.connectionState == ConnectionState.waiting && !listDocsSnapshot.hasData) {
+                      return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
                     }
                     if (listDocsSnapshot.hasError) {
-                      return Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Center(
-                              child: Text(
-                                  'Error loading bucket list details: ${listDocsSnapshot.error}',
-                                  style:
-                                      TextStyle(color: Colors.red.shade900))));
+                      return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading bucket list details: ${listDocsSnapshot.error}', style: TextStyle(color: Colors.red.shade900))));
                     }
-                    if (!listDocsSnapshot.hasData ||
-                        listDocsSnapshot.data!.isEmpty)
-                      return SizedBox.shrink();
+                    if (!listDocsSnapshot.hasData || listDocsSnapshot.data!.isEmpty) return const SizedBox.shrink();
 
-                    final validListDocs = listDocsSnapshot.data!
-                        .where((doc) => doc.exists)
-                        .toList();
+                    final validListDocs = listDocsSnapshot.data!.where((doc) => doc.exists).toList();
                     validListDocs.sort((a, b) {
-                      Timestamp? dateA = (a.data() as Map<String, dynamic>? )?['date'] as Timestamp?;
-                      Timestamp? dateB = (b.data() as Map<String, dynamic>? )?['date'] as Timestamp?;
+                      Timestamp? dateA = (a.data() as Map<String, dynamic>?)?['date'] as Timestamp?;
+                      Timestamp? dateB = (b.data() as Map<String, dynamic>?)?['date'] as Timestamp?;
                       if (dateA == null && dateB == null) return 0;
                       if (dateA == null) return 1;
                       if (dateB == null) return -1;
-                      return dateB.compareTo(dateB);
+                      return dateA.compareTo(dateB);
                     });
 
-                    return _buildListSection(
-                        context, "Buckets You're In", validListDocs, false);
+                    return _buildListSection(context, "Buckets You're In", validListDocs, false);
                   });
             }),
       ],
@@ -534,26 +436,18 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return Center(
-                child: CircularProgressIndicator(color: Colors.blue.shade600));
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+            return Center(child: CircularProgressIndicator(color: Colors.blue.shade600));
           }
           if (snapshot.hasError) {
-            return Center(
-                child: Text('Error searching lists: ${snapshot.error}',
-                    style: TextStyle(color: Colors.red.shade900)));
+            return Center(child: Text('Error searching lists: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900)));
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
-                child: Text('No open lists found for state "$state".',
-                    style: TextStyle(
-                        color: Colors.black54,
-                        fontSize: 16))); // Corrected quote
+            return Center(child: Text('No open lists found for state "$state".', style: const TextStyle(color: Colors.black54, fontSize: 16)));
           }
 
           return ListView.builder(
-            padding: EdgeInsets.only(top: 8.0, bottom: 80.0),
+            padding: const EdgeInsets.only(top: 8.0, bottom: 80.0),
             itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
               final doc = snapshot.data!.docs[index];
@@ -563,27 +457,23 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
               final Timestamp? showTimestamp = listData['date'] as Timestamp?;
               String formattedDate = '';
               if (showTimestamp != null) {
-                formattedDate =
-                    DateFormat('EEE, MMM d').format(showTimestamp.toDate());
+                formattedDate = DateFormat('EEE, MMM d').format(showTimestamp.toDate());
               }
 
               final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
               final filledSpotsCount = spotsMap.values.whereType<Map>().length;
               final regularSpots = (listData['numberOfSpots'] ?? 0) as int;
-              final waitlistSpots =
-                  (listData['numberOfWaitlistSpots'] ?? 0) as int;
-              // final bucketSpots = (listData['numberOfBucketSpots'] ?? 0) as int; // Not directly used for 'Open Spots' count
+              final waitlistSpots = (listData['numberOfWaitlistSpots'] ?? 0) as int;
               int totalDefinedSpots = regularSpots + waitlistSpots;
 
               return FadeInUp(
                 delay: Duration(milliseconds: 100 * index),
                 duration: const Duration(milliseconds: 400),
                 child: Card(
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: 0.9),
                   elevation: 3,
-                  margin: EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                  margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   child: ListTile(
                     title: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -591,29 +481,18 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                       textBaseline: TextBaseline.alphabetic,
                       children: [
                         Expanded(
-                          child: Text(listData['listName'] ?? 'Unnamed List',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                              overflow: TextOverflow.ellipsis),
+                          child: Text(listData['listName'] ?? 'Unnamed List', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
                         ),
                         if (formattedDate.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(left: 8.0),
-                            child: Text(formattedDate,
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.black54,
-                                    fontWeight: FontWeight.w500)),
+                            child: Text(formattedDate, style: const TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w500)),
                           ),
                       ],
                     ),
-                    subtitle: Text(listData['address'] ?? 'No Address Provided',
-                        overflow: TextOverflow.ellipsis),
-                    trailing: Text(
-                        'Open Spots: $filledSpotsCount/$totalDefinedSpots'),
-                    onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => SignupScreen(listId: docId))),
+                    subtitle: Text(listData['address'] ?? 'No Address Provided', overflow: TextOverflow.ellipsis),
+                    trailing: Text('Open Spots: $filledSpotsCount/$totalDefinedSpots'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SignupScreen(listId: docId))),
                   ),
                 ),
               );
@@ -626,42 +505,28 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
     var status = await Permission.camera.request();
     if (status.isGranted) {
       if (!mounted) return;
-      var res = await Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (context) => const SimpleBarcodeScannerPage()));
+      var res = await Navigator.push(context, MaterialPageRoute(builder: (context) => const SimpleBarcodeScannerPage()));
       if (res is String && res != "-1" && res.isNotEmpty && mounted) {
-        String scannedListId = res;
-        Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (context) => SignupScreen(listId: scannedListId)));
+        Navigator.push(context, MaterialPageRoute(builder: (context) => SignupScreen(listId: res)));
       }
     } else if (status.isPermanentlyDenied && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Camera permission permanently denied. Please enable it in settings.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Camera permission permanently denied. Please enable it in settings.')));
       await openAppSettings();
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Camera permission is required to scan QR codes.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Camera permission is required to scan QR codes.')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final Color appBarColor = Colors.blue.shade400;
-    final Color fabColor = appBarColor;
     if (currentUserId == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => RegistrationScreen()),
-              (Route<dynamic> route) => false);
+          Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const RegistrationScreen()), (route) => false);
         }
       });
-      return Scaffold(body: Center(child: Text("Redirecting...")));
+      return const Scaffold(body: Center(child: Text("Redirecting...")));
     }
 
     return Scaffold(
@@ -673,60 +538,50 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Booked Mic', style: TextStyle(fontSize: 12)),
-            Text(_selectedSearchState == null
-                ? 'My Signups'
-                : 'Open Lists: $_selectedSearchState'),
+            const Text('Booked Mic', style: TextStyle(fontSize: 12, color: Colors.white70)),
+            Text(
+              _selectedSearchState == null ? 'My Signups' : 'Open Lists: $_selectedSearchState',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         actions: [
           Tooltip(
-              message: _selectedSearchState == null
-                  ? 'Search by State'
-                  : 'Clear Search ($_selectedSearchState)',
+              message: _selectedSearchState == null ? 'Search by State' : 'Clear Search ($_selectedSearchState)',
               child: IconButton(
-                  icon: Icon(_selectedSearchState == null
-                      ? Icons.search
-                      : Icons.search_off),
+                  icon: Icon(_selectedSearchState == null ? Icons.search : Icons.search_off),
                   onPressed: _toggleSearch)),
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
-            child: ElevatedButton.icon(
-              onPressed: () => _switchRole(context),
-              icon: Icon(Icons.sync_alt, size: 20.0, color: Colors.white),
-              label: Text('Switch Role',
-                  style: TextStyle(fontSize: 14.0, color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade700,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
+            child: TextButton.icon(
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              foregroundColor: Colors.white,
+              backgroundColor: Colors.blue.shade800,
+              shape: const StadiumBorder(),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
+            icon: const Icon(Icons.sync_alt, size: 16),
+            label: const Text('Switch Role', style: TextStyle(fontSize: 12)),
+            onPressed: () => _switchRole(context),
+          ),
           ),
         ],
       ),
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: BoxDecoration(
-            gradient: LinearGradient(
-                begin: Alignment.topRight,
-                end: Alignment.bottomLeft,
-                colors: [Colors.blue.shade200, Colors.purple.shade100])),
-        child: _selectedSearchState == null
-            ? _buildMySignupsView()
-            : _buildSearchResultsBasedOnState(_selectedSearchState!),
+        decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Colors.blue.shade200, Colors.purple.shade100])),
+        child: _selectedSearchState == null ? _buildMySignupsView() : _buildSearchResultsBasedOnState(_selectedSearchState!),
       ),
       floatingActionButton: FadeInUp(
-        delay: Duration(milliseconds: 600),
+        delay: const Duration(milliseconds: 600),
         child: FloatingActionButton(
           onPressed: _scanQrCode,
-          backgroundColor: fabColor,
+          backgroundColor: appBarColor,
           foregroundColor: Colors.white,
           tooltip: 'Scan List QR Code',
-          child: Icon(Icons.qr_code_scanner),
+          child: const Icon(Icons.qr_code_scanner),
         ),
       ),
     );

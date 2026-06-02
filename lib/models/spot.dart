@@ -4,30 +4,31 @@ class Spot {
   String name;
   String? performerId;
   bool confirmed;
-  String type; // Add the type property
+  String type;
 
   Spot({
     required this.name,
     this.performerId,
     this.confirmed = false,
-    required this.type, // Add the type property to the constructor
+    this.type = 'regular',
   });
 
   Map<String, dynamic> toJson() {
     return {
       'name': name,
       'performerId': performerId,
+      'userId': performerId, // Also include userId for compatibility
       'confirmed': confirmed,
-      'type': type, // Include the type property in the toJson method
+      'type': type,
     };
   }
 
   factory Spot.fromMap(Map<String, dynamic> map) {
     return Spot(
-      name: map['name'] as String,
-      performerId: map['performerId'] as String?,
+      name: (map['name'] ?? map['performerName'] ?? 'Available') as String,
+      performerId: (map['performerId'] ?? map['userId']) as String?,
       confirmed: map['confirmed'] as bool? ?? false,
-      type: map['type'] as String, // Include the type property in the fromMap factory
+      type: (map['type'] ?? 'regular') as String,
     );
   }
 
