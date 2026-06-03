@@ -323,8 +323,8 @@ Future<void> _showTimerSettingsDialog() async {
                 Slider(
                   value: dialogMinutes.toDouble(),
                   min: 1,
-                  max: 180,
-                  divisions: 179,
+                  max: 90,
+                  divisions: 89,
                   label: dialogMinutes.toString(),
                   activeColor: Theme.of(context).colorScheme.primary,
                   inactiveColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),

@@ -100,12 +100,27 @@ class _CreatedListsScreenState extends State<CreatedListsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR Code downloaded!')));
       } else {
         try {
-           final directory = await getApplicationDocumentsDirectory();
+           final Directory directory;
+           if (Platform.isAndroid) {
+             final extDir = await getExternalStorageDirectory();
+             if (extDir != null) {
+               final parts = extDir.path.split('/');
+               final basePath = parts.take(3).join('/');
+               directory = Directory('$basePath/Download');
+               await directory.create(recursive: true);
+             } else {
+               directory = await getApplicationDocumentsDirectory();
+             }
+           } else {
+             directory = await getApplicationDocumentsDirectory();
+           }
            final String fileName = "QR_$listId.png";
            final File imageFile = File('${directory.path}/$fileName');
            await imageFile.writeAsBytes(imageBytes);
            if (!mounted) return;
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('QR saved: ${imageFile.path}')));
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+             content: Text('QR saved to: ${imageFile.path}'),
+           ));
         } catch (e) {
            if (!mounted) return;
            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving file: $e')));

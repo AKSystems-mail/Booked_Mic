@@ -5,6 +5,19 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.util.Properties
+
+fun loadKeystoreProperties(): Properties {
+    val properties = Properties()
+    val keystoreFile = rootProject.file("key.properties")
+    if (keystoreFile.exists()) {
+        properties.load(keystoreFile.inputStream())
+    }
+    return properties
+}
+
+val keystoreProperties = loadKeystoreProperties()
+
 android {
     namespace = "com.bookedmic.app"
     compileSdk = flutter.compileSdkVersion
@@ -31,11 +44,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String? ?: return@create
+            keyPassword = keystoreProperties["keyPassword"] as String? ?: return@create
+            storeFile = keystoreProperties["storeFile"]?.let {
+                file(it)
+            } ?: return@create
+            storePassword = keystoreProperties["storePassword"] as String? ?: return@create
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
