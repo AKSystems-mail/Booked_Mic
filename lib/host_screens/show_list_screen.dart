@@ -308,7 +308,6 @@ Future<void> _showTimerSettingsDialog() async {
     builder: (BuildContext dialogContext) {
       return StatefulBuilder(
         builder: (context, setDialogState) {
-          final int maxThreshold = (dialogMinutes * 60) - 1;
           return AlertDialog(
             title: const Text('Timer Settings'),
             content: Column(
@@ -331,9 +330,6 @@ Future<void> _showTimerSettingsDialog() async {
                   onChanged: (double value) {
                     setDialogState(() {
                       dialogMinutes = value.round();
-                      if (dialogThresholdSeconds >= dialogMinutes * 60) {
-                        dialogThresholdSeconds = maxThreshold > 5 ? maxThreshold : 5;
-                      }
                     });
                   },
                 ),
@@ -341,22 +337,26 @@ Future<void> _showTimerSettingsDialog() async {
                 const Text('Warning Threshold / Getting the light at...', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Text(
-                  '$dialogThresholdSeconds s',
+                  dialogThresholdSeconds >= 60
+                      ? '${dialogThresholdSeconds ~/ 60} min ${dialogThresholdSeconds % 60} s'
+                      : '$dialogThresholdSeconds s',
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
                 ),
                 Slider(
                   value: dialogThresholdSeconds.toDouble(),
                   min: 5,
-                  max: maxThreshold.toDouble(),
-                  divisions: ((maxThreshold - 5) ~/ 5).clamp(1, 1000),
-                  label: '${dialogThresholdSeconds}s',
+                  max: 900,
+                  divisions: 179,
+                  label: dialogThresholdSeconds >= 60
+                      ? '${dialogThresholdSeconds ~/ 60} min ${dialogThresholdSeconds % 60} s'
+                      : '${dialogThresholdSeconds}s',
                   activeColor: Theme.of(context).colorScheme.primary,
                   inactiveColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                   onChanged: (double value) {
                     setDialogState(() {
                       dialogThresholdSeconds = (value / 5).round() * 5;
                       if (dialogThresholdSeconds < 5) dialogThresholdSeconds = 5;
-                      if (dialogThresholdSeconds > maxThreshold) dialogThresholdSeconds = maxThreshold;
+                      if (dialogThresholdSeconds > 900) dialogThresholdSeconds = 900;
                     });
                   },
                 ),

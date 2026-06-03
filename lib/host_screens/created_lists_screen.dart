@@ -1,6 +1,5 @@
 // lib/host_screens/created_lists_screen.dart
 
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:screenshot/screenshot.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:gal/gal.dart';
 import 'package:rxdart/rxdart.dart';
 import '../services/web_download_helper.dart';
 import '../services/user_service.dart';
@@ -100,30 +99,12 @@ class _CreatedListsScreenState extends State<CreatedListsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR Code downloaded!')));
       } else {
         try {
-           final Directory directory;
-           if (Platform.isAndroid) {
-             final extDir = await getExternalStorageDirectory();
-             if (extDir != null) {
-               final parts = extDir.path.split('/');
-               final basePath = parts.take(3).join('/');
-               directory = Directory('$basePath/Download');
-               await directory.create(recursive: true);
-             } else {
-               directory = await getApplicationDocumentsDirectory();
-             }
-           } else {
-             directory = await getApplicationDocumentsDirectory();
-           }
-           final String fileName = "QR_$listId.png";
-           final File imageFile = File('${directory.path}/$fileName');
-           await imageFile.writeAsBytes(imageBytes);
+           await Gal.putImageBytes(imageBytes, name: "QR_$listId");
            if (!mounted) return;
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-             content: Text('QR saved to: ${imageFile.path}'),
-           ));
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR saved to gallery!')));
         } catch (e) {
            if (!mounted) return;
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving file: $e')));
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving to gallery: $e')));
         }
       }
     } catch (e) {
