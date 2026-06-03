@@ -19,6 +19,8 @@ import '../registration_screen.dart';
 class PerformerListScreen extends StatefulWidget {
   const PerformerListScreen({super.key});
 
+  static bool autoScanTrigger = false;
+
   @override
   State<PerformerListScreen> createState() => _PerformerListScreenState();
 }
@@ -40,7 +42,13 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
   @override
   void initState() {
     super.initState();
-    _loadLastSelectedState(); 
+    _loadLastSelectedState();
+    if (PerformerListScreen.autoScanTrigger) {
+      PerformerListScreen.autoScanTrigger = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scanQrCode();
+      });
+    }
   }
 
   @override

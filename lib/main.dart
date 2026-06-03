@@ -166,12 +166,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     void _setupHomeWidgetLinks() {
       HomeWidget.setAppGroupId('group.bookedmic.app');
       HomeWidget.initiallyLaunchedFromHomeWidget().then((uri) {
+        debugPrint('[HomeWidget] initiallyLaunchedFromHomeWidget: $uri (host=${uri?.host})');
         if (uri?.host == 'nearbyMics') {
           navigatorKey.currentState?.pushNamed('/nearbyMics');
         }
       });
       
       HomeWidget.widgetClicked.listen((uri) {
+        debugPrint('[HomeWidget] widgetClicked: $uri (host=${uri?.host})');
         if (uri?.host == 'nearbyMics') {
           navigatorKey.currentState?.pushNamed('/nearbyMics');
         }
@@ -189,7 +191,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         
         if (shortcutType == 'quick_scan') {
            await prefs.setString('user_role', 'performer');
-           // PerformerListScreen.autoScanTrigger = true;
+           PerformerListScreen.autoScanTrigger = true;
            navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
         } else if (shortcutType == 'switch_role') {
            await prefs.remove('user_role');
