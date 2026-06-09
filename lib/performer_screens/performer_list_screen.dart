@@ -469,7 +469,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
               }
 
               final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
-              final filledSpotsCount = spotsMap.values.whereType<Map>().length;
+              final filledSpotsCount = spotsMap.values.where((v) => v is Map && v.isNotEmpty).length;
               final regularSpots = (listData['numberOfSpots'] ?? 0) as int;
               final waitlistSpots = (listData['numberOfWaitlistSpots'] ?? 0) as int;
               int totalDefinedSpots = regularSpots + waitlistSpots;

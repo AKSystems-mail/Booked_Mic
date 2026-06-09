@@ -22,6 +22,8 @@ import 'host_screens/created_lists_screen.dart';
 import 'performer_screens/performer_list_screen.dart';
 import 'performer_screens/nearby_mics_screen.dart';
 import 'services/user_service.dart';
+import 'services/notification_service.dart';
+import 'services/fcm_service.dart';
 import 'providers/firestore_provider.dart';
 import 'services/settings_service.dart';
 
@@ -331,6 +333,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
         debugPrint("[AuthWrapper] Setup complete. Code: $code");
       });
       UserService().cacheStageName();
+      NotificationService().startListening(uid);
+      FcmService().init(uid);
     }
 
     Future<void> _saveLastKnownUid(String uid) async {

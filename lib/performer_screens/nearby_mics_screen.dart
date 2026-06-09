@@ -82,7 +82,7 @@ class _NearbyMicsScreenState extends State<NearbyMicsScreen> {
                 final openMics = snapshot.data!.docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final spotsMap = data['spots'] as Map<String, dynamic>? ?? {};
-                  final filledSpotsCount = spotsMap.values.whereType<Map>().length;
+                  final filledSpotsCount = spotsMap.values.where((v) => v is Map && v.isNotEmpty).length;
                   final regularSpots = (data['numberOfSpots'] ?? 0) as int;
                   final waitlistSpots = (data['numberOfWaitlistSpots'] ?? 0) as int;
                   final bucketSpots = (data['numberOfBucketSpots'] ?? 0) as int;
