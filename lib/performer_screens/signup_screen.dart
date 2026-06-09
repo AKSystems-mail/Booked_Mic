@@ -94,7 +94,8 @@ class _SignupScreenState extends State<SignupScreen> {
          Map<String, dynamic> listData = snapshot.data() as Map<String, dynamic>;
          Map<String, dynamic> spots = Map<String, dynamic>.from(listData['spots'] ?? {});
          
-         if (spots.containsKey(_selectedSpotKey!)) throw Exception("Spot not available");
+          final existingSpot = spots[_selectedSpotKey!];
+          if (existingSpot is Map && existingSpot.isNotEmpty) throw Exception("Spot not available");
          
          spots[_selectedSpotKey!] = {
            'name': _performerStageName!,
@@ -264,7 +265,7 @@ class _SignupScreenState extends State<SignupScreen> {
       String titleText = 'Available';
       Color titleColor = Colors.green.shade700;
       
-      if (spotData is Map) {
+      if (spotData is Map && spotData.isNotEmpty) {
          isAvailable = false;
          isTakenByMe = spotData['userId'] == _performerId;
          titleText = isTakenByMe ? (spotData['name'] ?? 'You') : 'Taken';

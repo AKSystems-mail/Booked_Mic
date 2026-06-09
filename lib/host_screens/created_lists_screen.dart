@@ -329,7 +329,7 @@ class _CreatedListsScreenState extends State<CreatedListsScreen> {
 
                       final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
                       int filledRegular = 0;
-                      spotsMap.forEach((key, value) { if (value is Map && int.tryParse(key) != null) filledRegular++; });
+                      spotsMap.forEach((key, value) { if (value is Map && value.isNotEmpty && int.tryParse(key) != null) filledRegular++; });
                       final totalRegular = (listData['numberOfSpots'] ?? 0) as int;
 
                       return FadeInUp(

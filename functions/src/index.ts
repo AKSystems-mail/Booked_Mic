@@ -10,6 +10,15 @@ import * as admin from "firebase-admin";
 admin.initializeApp();
 const { FieldValue } = admin.firestore; // Keep FieldValue
 
+function findUserSpotKey(spots: { [key: string]: any }, userId: string): string | null {
+  for (const [key, value] of Object.entries(spots)) {
+    if (typeof value === 'object' && value !== null && value.userId === userId) {
+      return key;
+    }
+  }
+  return null;
+}
+
 /**
  * Finds a user's UID by their Host Code.
  */
@@ -114,8 +123,38 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
     }
 
     if (removedSpotNumber === null) {
-      logger.info(`[${listId}] No main spot removal detected.`);
-      return; // Exit if no main spot was removed
+      // Reorder detection: performers whose position changed without key removal
+      const reorderNotifications: Array<{ userId: string; newKey: string }> = [];
+      for (const [newKey, newValue] of Object.entries(afterSpots)) {
+        if (typeof newValue === 'object' && newValue !== null && 'userId' in newValue) {
+          const oldKey = findUserSpotKey(beforeSpots, newValue.userId);
+          if (oldKey !== null && oldKey !== newKey) {
+            reorderNotifications.push({ userId: newValue.userId, newKey });
+          }
+        }
+      }
+      if (reorderNotifications.length > 0) {
+        logger.info(`[${listId}] Detected reorder for ${reorderNotifications.length} performers.`);
+        for (const { userId, newKey } of reorderNotifications) {
+          try {
+            const userDoc = await admin.firestore().collection("users").doc(userId).get();
+            const fcmTokens = userDoc.data()?.fcmTokens as string[] | undefined;
+            if (fcmTokens && fcmTokens.length > 0) {
+              const body = newKey === "1" ? "You are up next!" : `You are now at spot #${newKey}.`;
+              await admin.messaging().sendEachForMulticast({
+                notification: { title: "Booked Mic Update", body },
+                tokens: fcmTokens,
+              });
+              logger.info(`[${listId}] Notified user ${userId} about reorder to ${newKey}`);
+            }
+          } catch (notifError) {
+            logger.error(`[${listId}] Error notifying user ${userId}:`, notifError);
+          }
+        }
+      } else {
+        logger.info(`[${listId}] No main spot removal or reorder detected.`);
+      }
+      return;
     }
 
     // --- Perform Shifts ---

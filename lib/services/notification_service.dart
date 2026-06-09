@@ -13,12 +13,19 @@ class NotificationService {
   NotificationService._internal();
 
   StreamSubscription<QuerySnapshot>? _listsSubscription;
+  Timer? _heartbeatTimer;
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
   
   // New: Notifier for the UI banner
   final ValueNotifier<String?> bannerMessageNotifier = ValueNotifier(null);
   final ValueNotifier<bool> isUpNextNotifier = ValueNotifier(false);
+
+  // Cached widget data for heartbeat re-send
+  String _lastListName = '';
+  String _lastSpotNumber = '--';
+  bool _lastIsOnStage = false;
+  bool _lastIsUpNext = false;
 
   void startListening(String userId) {
     if (_listsSubscription != null) {
@@ -31,9 +38,28 @@ class NotificationService {
         .listen((snapshot) {
       _updateAndNotifyPositions(snapshot.docs, userId);
     });
+    if (!kIsWeb) {
+      AwesomeNotifications().requestPermissionToSendNotifications();
+    }
+    _startHeartbeat();
+  }
+
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_lastListName.isNotEmpty && !kIsWeb) {
+        WidgetService.updateUpNextWidget(
+          listName: _lastListName,
+          spotNumber: _lastSpotNumber,
+          isOnStage: _lastIsOnStage,
+          isUpNext: _lastIsUpNext,
+        );
+      }
+    });
   }
 
   void stopListening() {
+    _heartbeatTimer?.cancel();
     _listsSubscription?.cancel();
     _lastNotifiedPositionNotifier.value = {};
     bannerMessageNotifier.value = null;
@@ -44,7 +70,6 @@ class NotificationService {
   }
 
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs, String userId) {
-    final today = DateTime.now();
     final Map<String, int?> currentPositions = {};
 
     for (var doc in docs) {
@@ -52,46 +77,44 @@ class NotificationService {
       final String listId = doc.id;
       final String listName = listData['listName'] ?? 'Unnamed List';
 
-      final Timestamp? showTimestamp = listData['date'] as Timestamp?;
-      if (showTimestamp != null) {
-        final showDate = showTimestamp.toDate();
-        if (showDate.year == today.year &&
-            showDate.month == today.month &&
-            showDate.day == today.day) {
-          final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
-          final numRegular = (listData['numberOfSpots'] ?? 0) as int;
-          
-          List<String> activeRegularPerformers = [];
+      final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
+      final numRegular = (listData['numberOfSpots'] ?? 0) as int;
+      
+      int performersAhead = 0;
+      bool foundMe = false;
 
-          void checkSpot(String key) {
-            if (spotsMap.containsKey(key)) {
-              final d = spotsMap[key];
-              if (d is Map && d['userId'] != null && !(d['isOver'] == true)) {
-                activeRegularPerformers.add(d['userId'] as String);
-              }
-            }
+      for (int i = 1; i <= numRegular && !foundMe; i++) {
+        final key = i.toString();
+        if (spotsMap.containsKey(key)) {
+          final d = spotsMap[key];
+          if (d is Map && d['userId'] == userId && !(d['isOver'] == true)) {
+            foundMe = true;
+          } else if (d is Map && !(d['isOver'] == true)) {
+            performersAhead++;
           }
+        }
+      }
 
-          // Strictly Regular Spots as per instructions
-          for (int i = 1; i <= numRegular; i++) {
-            checkSpot(i.toString());
-          }
+      final int? currentPositionIndex = foundMe ? performersAhead : null;
+      currentPositions[listId] = currentPositionIndex;
 
-          final int currentPositionIndex = activeRegularPerformers.indexOf(userId);
-          currentPositions[listId] = currentPositionIndex;
+      if (currentPositionIndex != null) {
+        final int totalActive = performersAhead + 1;
+        final bool isOnStage = currentPositionIndex == 0;
+        final bool isUpNext = currentPositionIndex == 1;
+        final String spotNumber = (currentPositionIndex + 1).toString();
 
-          if (currentPositionIndex != -1) {
-            final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
+        // Always update widget with latest position
+        _updateWidgetData(listName, spotNumber, isOnStage, isUpNext);
 
-            // Only notify if position decreased (moved forward)
-            if (lastNotifiedPosition == null || currentPositionIndex < lastNotifiedPosition) {
-              _showCustomPositionNotification(
-                  listId,
-                  listName,
-                  currentPositionIndex,
-                  activeRegularPerformers.length);
-            }
-          }
+        final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
+
+        if (lastNotifiedPosition == null || currentPositionIndex < lastNotifiedPosition) {
+          _showCustomPositionNotification(
+              listId,
+              listName,
+              currentPositionIndex,
+              totalActive);
         }
       }
     }
@@ -99,7 +122,7 @@ class NotificationService {
     // Update global state
     final Map<String, int?> nextNotifierValue = Map.from(_lastNotifiedPositionNotifier.value);
     currentPositions.forEach((listId, position) {
-      if (position != -1) {
+      if (position != null) {
         nextNotifierValue[listId] = position;
       } else {
         nextNotifierValue.remove(listId);
@@ -114,6 +137,21 @@ class NotificationService {
 
     if (!mapEquals(_lastNotifiedPositionNotifier.value, nextNotifierValue)) {
       _lastNotifiedPositionNotifier.value = nextNotifierValue;
+    }
+  }
+
+  void _updateWidgetData(String listName, String spotNumber, bool isOnStage, bool isUpNext) {
+    _lastListName = listName;
+    _lastSpotNumber = spotNumber;
+    _lastIsOnStage = isOnStage;
+    _lastIsUpNext = isUpNext;
+    if (!kIsWeb) {
+      WidgetService.updateUpNextWidget(
+        listName: listName,
+        spotNumber: spotNumber,
+        isOnStage: isOnStage,
+        isUpNext: isUpNext,
+      );
     }
   }
 
@@ -139,16 +177,6 @@ class NotificationService {
     // Set UI banner
     bannerMessageNotifier.value = body;
     isUpNextNotifier.value = isUpNext || isOnStage;
-
-    // Update Home Widget
-    if (!kIsWeb) {
-      WidgetService.updateUpNextWidget(
-        listName: listName,
-        spotNumber: (currentPositionIndex + 1).toString(),
-        isOnStage: isOnStage,
-        isUpNext: isUpNext,
-      );
-    }
 
     try {
       // ONLY send push notification if NOT on stage (redundant since they get notified at #2)
