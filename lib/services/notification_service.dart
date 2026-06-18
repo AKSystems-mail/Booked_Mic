@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:flutter/foundation.dart';
-//
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'widget_service.dart';
 
 class NotificationService {
@@ -14,6 +14,7 @@ class NotificationService {
 
   StreamSubscription<QuerySnapshot>? _listsSubscription;
   Timer? _heartbeatTimer;
+  String? _userId;
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
   
@@ -28,6 +29,7 @@ class NotificationService {
   bool _lastIsUpNext = false;
 
   void startListening(String userId) {
+    _userId = userId;
     if (_listsSubscription != null) {
       _listsSubscription!.cancel();
     }
@@ -42,6 +44,7 @@ class NotificationService {
       AwesomeNotifications().requestPermissionToSendNotifications();
     }
     _startHeartbeat();
+    _fetchAndUpdateNearbyMicsWidget();
   }
 
   void _startHeartbeat() {
@@ -55,7 +58,40 @@ class NotificationService {
           isUpNext: _lastIsUpNext,
         );
       }
+      _fetchAndUpdateNearbyMicsWidget();
     });
+  }
+
+  Future<void> _fetchAndUpdateNearbyMicsWidget() async {
+    if (kIsWeb) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userState = prefs.getString('last_selected_search_state') ?? 'GA';
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Lists')
+          .where('isSearchable', isEqualTo: true)
+          .where('state', isEqualTo: userState)
+          .get();
+
+      final openMics = snapshot.docs.where((doc) {
+        final data = doc.data();
+        final spotsMap = data['spots'] as Map<String, dynamic>? ?? {};
+        final filledSpotsCount =
+            spotsMap.values.where((v) => v is Map && v.isNotEmpty).length;
+        final regularSpots = (data['numberOfSpots'] ?? 0) as int;
+        final waitlistSpots = (data['numberOfWaitlistSpots'] ?? 0) as int;
+        final bucketSpots = (data['numberOfBucketSpots'] ?? 0) as int;
+        return filledSpotsCount < (regularSpots + waitlistSpots + bucketSpots);
+      }).length;
+
+      WidgetService.updateNearbyMicsWidget(
+        count: openMics,
+        city: userState,
+      );
+    } catch (e) {
+      debugPrint("Error updating Nearby Mics widget: $e");
+    }
   }
 
   void stopListening() {
@@ -169,9 +205,9 @@ class NotificationService {
       body = "You're up next! Get ready.";
       isUpNext = true;
     } else if (currentPositionIndex == 2) {
-      body = "There is 1 performer ahead of you.";
+      body = "There are 2 performers ahead of you.";
     } else {
-      body = "There are ${currentPositionIndex - 1} performers ahead of you.";
+      body = "There are $currentPositionIndex performers ahead of you.";
     }
 
     // Set UI banner
