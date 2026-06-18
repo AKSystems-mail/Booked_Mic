@@ -7,10 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:quick_actions/quick_actions.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'dart:async';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 
@@ -50,9 +52,42 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// Handles data-only FCM messages when the app is killed or in background.
+/// Uses flutterLocalNotificationsPlugin because it works in the background isolate.
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  final data = message.data;
+  if (data['type'] == 'spot_update') {
+    final title = data['title'] ?? 'Booked Mic Update';
+    final body = data['body'] ?? 'Your spot has updated.';
+    final listId = data['listId'] ?? '';
+
+    flutterLocalNotificationsPlugin.show(
+      listId.hashCode + data.hashCode,
+      title,
+      body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'spot_updates_channel',
+          'Spot Updates',
+          channelDescription: 'Notifications for queue position updates',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+      payload: listId,
+    );
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // Register background FCM handler BEFORE Firebase init (required by FCM docs)
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -81,18 +116,8 @@ Future<void> main() async {
      debugPrint("Error loading .env file: $e");
   }
 
-  // Attempt Silent Sign-In for Google Users (Blocking with timeout to reduce auth restore races)
+  // Notification initialization (mobile only)
   if (!kIsWeb) {
-    try {
-      // Await silent sign-in but don't block forever - timeout after 3s
-      await GoogleSignIn().signInSilently().timeout(const Duration(seconds: 3));
-      debugPrint('[main] Google signInSilently completed. currentUser=${FirebaseAuth.instance.currentUser?.uid ?? 'null'}');
-      addClientLog('info', 'google_signin_silent_completed', meta: {'currentUser': FirebaseAuth.instance.currentUser?.uid});
-    } catch (e) {
-      debugPrint('[main] Google signInSilently failed/timeout: $e');
-      addClientLog('warn', 'google_signin_silent_failed', meta: {'error': '$e'});
-    }
-
     AwesomeNotifications().initialize(
       null,
       [
@@ -247,35 +272,55 @@ class _AuthWrapperState extends State<AuthWrapper> {
     /// credential restore that happens on every cold start.
     bool _authSettled = false;
 
-    late final Stream<User?> _authStream;
+    StreamSubscription<User?>? _authSubscription;
 
     @override
     void initState() {
       super.initState();
-      _authStream = FirebaseAuth.instance.authStateChanges();
+      // Listen in the background — triggers _ensureUserSetup whenever
+      // Firebase Auth emits (cold-start restore, sign-in, sign-out, token refresh).
+      // The StreamBuilder below reacts to the same stream for UI routing.
+      _authSubscription =
+          FirebaseAuth.instance.authStateChanges().listen((user) {
+        if (user != null) _ensureUserSetup(user.uid);
+      });
       _waitForAuthToSettle();
     }
 
-    /// Polls `currentUser` for up to 10 seconds on cold start (if the user
-    /// was previously signed in).  If the user is new (no `last_known_uid`)
-    /// we settle after 2 seconds to avoid an unnecessary long spinner.
-    /// During the wait we also attempt Google silent sign-in to help Firebase
-    /// Auth recover a Google credential on devices where native persistence
-    /// is slow or unreliable.
+    @override
+    void dispose() {
+      _authSubscription?.cancel();
+      super.dispose();
+    }
+
+    /// Polls `currentUser` for up to 10 seconds on cold start for Google
+    /// users (whose credential restore can be slow), or 2 seconds for
+    /// email/password users (whose local session resolves almost instantly).
+    /// During the wait we also attempt Google silent sign-in to re-hydrate
+    /// the Firebase Auth session on devices where native persistence lags.
     Future<void> _waitForAuthToSettle() async {
       addClientLog('info', 'auth_settle_start');
 
       const int intervalMs = 250;
-      // Returning users get a full 10 s to restore; new users settle sooner.
       final prefs = await SharedPreferences.getInstance();
       final bool hasLastUid = prefs.containsKey('last_known_uid');
+
+      // Only Google users need the long timeout — email/password auth
+      // restores from local persistence nearly instantly.
+      bool isGoogleUser = false;
+      if (hasLastUid && !kIsWeb) {
+        try {
+          isGoogleUser = await GoogleSignIn().isSignedIn();
+        } catch (_) {}
+      }
+
       const int returningTimeoutMs = 10000;
       const int freshTimeoutMs = 2000;
-      final int timeoutMs = hasLastUid ? returningTimeoutMs : freshTimeoutMs;
+      final int timeoutMs = isGoogleUser ? returningTimeoutMs : freshTimeoutMs;
       int waited = 0;
 
       addClientLog('info', 'auth_settle_config',
-          meta: {'hasLastUid': hasLastUid, 'timeoutMs': timeoutMs});
+          meta: {'hasLastUid': hasLastUid, 'isGoogleUser': isGoogleUser, 'timeoutMs': timeoutMs});
 
       while (waited < timeoutMs) {
         final user = FirebaseAuth.instance.currentUser;
@@ -288,7 +333,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         // If we've been waiting for 2 seconds with no user and the user
         // might be a Google user, try silent sign-in to re-hydrate the
         // Firebase Auth session.
-        if (waited >= 2000 && !kIsWeb && hasLastUid && waited < 3000) {
+        if (waited >= 2000 && !kIsWeb && isGoogleUser && waited < 3000) {
           try {
             final googleUser = await GoogleSignIn().signInSilently()
                 .timeout(const Duration(seconds: 2));
@@ -354,7 +399,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     @override
     Widget build(BuildContext context) {
       return StreamBuilder<User?>(
-        stream: _authStream,
+        stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, authSnapshot) {
           debugPrint('[AuthWrapper] authSnapshot: state=${authSnapshot.connectionState} '
               'hasData=${authSnapshot.hasData} error=${authSnapshot.error} '
@@ -363,7 +408,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
           final user = authSnapshot.data ?? FirebaseAuth.instance.currentUser;
 
           if (user != null) {
-            _ensureUserSetup(user.uid);
+            // _ensureUserSetup is now handled by the stream listener
+            // in initState, not from inside the build method.
 
             return FutureBuilder<String?>(
               future: _getSavedRole(),

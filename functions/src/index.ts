@@ -142,7 +142,13 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
             if (fcmTokens && fcmTokens.length > 0) {
               const body = newKey === "1" ? "You are up next!" : `You are now at spot #${newKey}.`;
               await admin.messaging().sendEachForMulticast({
-                notification: { title: "Booked Mic Update", body },
+                data: {
+                  type: "spot_update",
+                  title: "Booked Mic Update",
+                  body: body,
+                  listId: listId,
+                  spot: newKey,
+                },
                 tokens: fcmTokens,
               });
               logger.info(`[${listId}] Notified user ${userId} about reorder to ${newKey}`);
@@ -251,15 +257,16 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                 body = `You are now at spot #${spotKey}.`;
               }
               
-              const message = {
-                notification: {
+              await admin.messaging().sendEachForMulticast({
+                data: {
+                  type: "spot_update",
                   title: "Booked Mic Update",
                   body: body,
+                  listId: listId,
+                  spot: spotKey,
                 },
                 tokens: fcmTokens,
-              };
-              
-              await admin.messaging().sendEachForMulticast(message);
+              });
               logger.info(`[${listId}] Notified user ${userId} about shift to ${spotKey}`);
             }
           }

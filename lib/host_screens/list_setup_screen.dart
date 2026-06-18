@@ -262,7 +262,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                       ),
                       Switch(
                         value: _isSearchable,
-                        activeThumbColor: Colors.deepPurple,
+                        thumbColor: WidgetStateProperty.resolveWith((states) => Colors.deepPurple),
                         onChanged: (val) => setState(() => _isSearchable = val),
                       ),
                     ],
