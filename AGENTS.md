@@ -11,8 +11,9 @@ firebase emulators:start --only auth,firestore,functions,ui
 # Flutter (debug web — auto-connects to localhost:9099 Auth, :8080 Firestore)
 flutter run -d chrome
 
-# Admin dashboard (still CRA, NOT Vite despite SESSION_UPDATE_INSTRUCTIONS.md)
-cd admin-dashboard && npm start          # HOST=0.0.0.0 react-scripts start
+# Admin dashboard (migrated to Vite)
+cd admin-dashboard && npm run dev        # vite dev server (localhost:5173)
+cd admin-dashboard && npm run build      # tsc + vite build -> build/
 
 # Functions
 cd functions && npm run build            # tsc src/ -> lib/
@@ -25,7 +26,7 @@ cd functions && npm run deploy           # firebase deploy --only functions
 - **State**: Provider pattern. `FirestoreProvider` (ChangeNotifier) bridges UI and `FirestoreService`.
 - **Auth**: `AuthWrapper` in `main.dart` — polls `currentUser` for up to 10 s on cold start before showing login, to let Firebase persist restore race settle.
 - **Functions**: Firestore v2 SDK (`firebase-functions/v2/*`). Triggers: `onCall` (findUserByHostCode, findUserByEmail, allocateHostCode), `onDocumentUpdated` (spot-shift + FCM), `schedule` (clearOldClientLogs). Node 22.
-- **Admin dashboard**: CRA `react-scripts 5.0.1`. Firestore rules use roles: admin (`admins/{uid}`), list owner, guest host, performer.
+- **Admin dashboard**: Vite + React 19 + Bootstrap 5. Firestore rules use roles: admin (`admins/{uid}`), list owner, guest host, performer.
 
 ## Critical gotchas
 
@@ -49,11 +50,11 @@ cd functions && npm run deploy           # firebase deploy --only functions
 
 - Flutter: one boilerplate widget test at `test/widget_test.dart` (outdated — tests counter from default template, not real app).
 - Functions: no test suite configured.
-- Admin dashboard: `cd admin-dashboard && npm test` (jest via react-scripts).
+- Admin dashboard: no test suite configured (Vite — add vitest if needed).
 - CI: `.github/workflows/build.yml` only builds Android APK.
 
 ## Untrustworthy docs
 
-- `SESSION_UPDATE_INSTRUCTIONS.md` claims dashboard migrated to Vite — **false**, still CRA. Trust `admin-dashboard/package.json`.
+- ~~`SESSION_UPDATE_INSTRUCTIONS.md` claims dashboard migrated to Vite — **now true**, trust AGENTS.md.~~
 - `GEMINI.md` is conceptual background — verify claims against code.
 - `README.md` is Flutter default template, not project-specific.
