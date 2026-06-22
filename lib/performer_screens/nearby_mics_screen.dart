@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
 import 'signup_screen.dart';
+import '../widgets/booked_mic_loading.dart';
 
 class NearbyMicsScreen extends StatefulWidget {
   const NearbyMicsScreen({super.key});
@@ -62,7 +63,7 @@ class _NearbyMicsScreenState extends State<NearbyMicsScreen> {
           ),
         ),
         child: _isLoading 
-          ? const Center(child: CircularProgressIndicator(color: Colors.white))
+          ? const Center(child: BookedMicLoading())
           : StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('Lists')
@@ -72,7 +73,7 @@ class _NearbyMicsScreenState extends State<NearbyMicsScreen> {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: Colors.white));
+                  return const BookedMicLoading();
                 }
                 if (snapshot.hasError) {
                   return const Center(child: Text('Error loading mics.'));

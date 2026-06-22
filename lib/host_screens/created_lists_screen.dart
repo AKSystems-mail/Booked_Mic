@@ -10,6 +10,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:gal/gal.dart';
 import 'package:rxdart/rxdart.dart';
+
+import '../widgets/booked_mic_loading.dart';
 import '../services/web_download_helper.dart';
 import '../services/user_service.dart';
 
@@ -193,7 +195,7 @@ class _CreatedListsScreenState extends State<CreatedListsScreen> {
   @override
   Widget build(BuildContext context) {
     if (currentUserId == null) {
-       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+       return const Scaffold(body: BookedMicLoading());
     }
 
     final ownerStream = FirebaseFirestore.instance.collection('Lists').where('userId', isEqualTo: currentUserId).snapshots();
@@ -291,7 +293,7 @@ class _CreatedListsScreenState extends State<CreatedListsScreen> {
               child: StreamBuilder<List<QuerySnapshot>>(
                 stream: Rx.combineLatest2(ownerStream, guestStream, (a, b) => [a, b]),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.white));
+                  if (snapshot.connectionState == ConnectionState.waiting) return const BookedMicLoading();
                   if (snapshot.hasError) return const Center(child: Text('Error loading lists.', style: TextStyle(color: Colors.red)));
                   
                   final List<DocumentSnapshot> allDocs = [];
