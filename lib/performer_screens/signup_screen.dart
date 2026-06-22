@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:animate_do/animate_do.dart';
 
+import '../widgets/booked_mic_loading.dart';
+
 class SignupScreen extends StatefulWidget {
   final String listId;
 
@@ -217,11 +219,11 @@ class _SignupScreenState extends State<SignupScreen> {
         width: double.infinity, height: double.infinity,
         decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Colors.blue.shade200, Colors.purple.shade100])),
         child: _isLoadingPerformer
-            ? Center(child: CircularProgressIndicator(color: primaryColor))
+            ? const Center(child: BookedMicLoading())
             : StreamBuilder<DocumentSnapshot>(
                 stream: _firestore.collection('Lists').doc(widget.listId).snapshots(),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) return Center(child: CircularProgressIndicator(color: primaryColor));
+                  if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) return const BookedMicLoading();
                   if (snapshot.hasError) return Center(child: Text('Error loading list: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900)));
                   if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: Text('List not found.', style: TextStyle(color: Colors.black54)));
 

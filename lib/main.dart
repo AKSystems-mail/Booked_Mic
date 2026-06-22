@@ -18,6 +18,7 @@ import 'package:provider/provider.dart';
 
 // Import your screen widgets and services
 import 'firebase_options.dart';
+import 'widgets/booked_mic_loading.dart';
 import 'registration_screen.dart';
 import 'role_selection_screen.dart';
 import 'host_screens/created_lists_screen.dart';
@@ -415,7 +416,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
               future: _getSavedRole(),
               builder: (context, roleSnapshot) {
                 if (roleSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                  return const Scaffold(body: Center(child: BookedMicLoading()));
                 }
 
                 final role = roleSnapshot.data;
@@ -431,7 +432,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           }
 
           if (!_authSettled) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            return const Scaffold(body: Center(child: BookedMicLoading()));
           }
 
           return const RegistrationScreen();

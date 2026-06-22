@@ -8,6 +8,8 @@ import 'package:animate_do/animate_do.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 import 'package:intl/intl.dart'; 
+
+import '../widgets/booked_mic_loading.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io' show Platform; 
 
@@ -380,7 +382,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
             stream: onListStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
+                return const Padding(padding: EdgeInsets.all(16.0), child: BookedMicLoading());
               }
               if (snapshot.hasError) {
                 return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading lists: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900))));
@@ -391,7 +393,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
             stream: bucketSignupsStream,
             builder: (context, bucketSnapshot) {
               if (bucketSnapshot.connectionState == ConnectionState.waiting && !bucketSnapshot.hasData) {
-                return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
+                return const Padding(padding: EdgeInsets.all(16.0), child: BookedMicLoading());
               }
               if (bucketSnapshot.hasError) {
                 return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading bucket signups: ${bucketSnapshot.error}', style: TextStyle(color: Colors.red.shade900))));
@@ -411,7 +413,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
                   future: Future.wait(bucketListIds.map((id) => _firestore.collection('Lists').doc(id).get())),
                   builder: (context, listDocsSnapshot) {
                     if (listDocsSnapshot.connectionState == ConnectionState.waiting && !listDocsSnapshot.hasData) {
-                      return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.blue.shade600)));
+                      return const Padding(padding: EdgeInsets.all(16.0), child: BookedMicLoading());
                     }
                     if (listDocsSnapshot.hasError) {
                       return Padding(padding: const EdgeInsets.all(16.0), child: Center(child: Text('Error loading bucket list details: ${listDocsSnapshot.error}', style: TextStyle(color: Colors.red.shade900))));
@@ -445,7 +447,7 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-            return Center(child: CircularProgressIndicator(color: Colors.blue.shade600));
+            return const BookedMicLoading();
           }
           if (snapshot.hasError) {
             return Center(child: Text('Error searching lists: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900)));
