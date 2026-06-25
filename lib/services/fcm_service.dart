@@ -45,8 +45,8 @@ class FcmService {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
-          .update({'fcmTokens': [token]});
-      debugPrint('[FCM] Token stored for user $userId (replaced old tokens)');
+          .update({'fcmTokens': FieldValue.arrayUnion([token])});
+      debugPrint('[FCM] Token stored for user $userId');
     } catch (e) {
       debugPrint('[FCM] Error storing token: $e');
     }
