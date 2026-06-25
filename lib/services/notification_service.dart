@@ -106,6 +106,7 @@ class NotificationService {
   }
 
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs, String userId) {
+    debugPrint("[NotifSvc] Snapshot fired! Docs count: ${docs.length}");
     final Map<String, int?> currentPositions = {};
 
     for (var doc in docs) {
@@ -123,16 +124,20 @@ class NotificationService {
         final key = i.toString();
         if (spotsMap.containsKey(key)) {
           final d = spotsMap[key];
+          debugPrint("[NotifSvc] Spot $key: userId=${d is Map ? d['userId'] : 'N/A'}, isOver=${d is Map ? d['isOver'] : 'N/A'}");
           if (d is Map && d['userId'] == userId && !(d['isOver'] == true)) {
             foundMe = true;
           } else if (d is Map && !(d['isOver'] == true)) {
             performersAhead++;
           }
+        } else {
+          debugPrint("[NotifSvc] Spot $key: missing");
         }
       }
 
       final int? currentPositionIndex = foundMe ? performersAhead : null;
       currentPositions[listId] = currentPositionIndex;
+      debugPrint("[NotifSvc] List '$listName': foundMe=$foundMe, performersAhead=$performersAhead, currentPositionIndex=$currentPositionIndex");
 
       if (currentPositionIndex != null) {
         final int totalActive = performersAhead + 1;
@@ -144,8 +149,10 @@ class NotificationService {
         _updateWidgetData(listName, spotNumber, isOnStage, isUpNext);
 
         final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
+        debugPrint("[NotifSvc] lastNotifiedPosition=$lastNotifiedPosition, currentPositionIndex=$currentPositionIndex");
 
         if (lastNotifiedPosition != null && currentPositionIndex < lastNotifiedPosition) {
+          debugPrint("[NotifSvc] *** TRIGGERING notification! ***");
           _showCustomPositionNotification(
               listId,
               listName,
