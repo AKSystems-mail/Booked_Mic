@@ -24,6 +24,9 @@ class NotificationService {
   final ValueNotifier<String?> bannerMessageNotifier = ValueNotifier(null);
   final ValueNotifier<bool> isUpNextNotifier = ValueNotifier(false);
 
+  // Track spots already notified as "set over" — listId:spotKey pairs
+  final Set<String> _notifiedOverSpots = {};
+
   // Cached widget data for heartbeat re-send
   String _lastListName = '';
   String _lastSpotNumber = '--';
@@ -100,7 +103,7 @@ class NotificationService {
           'message': 'app_heartbeat',
           'meta': {'userId': _userId, 'type': 'periodic_alive_check'},
           'timestamp': FieldValue.serverTimestamp(),
-        });
+        }).catchError((_) {});
       }
     });
   }
@@ -143,6 +146,7 @@ class NotificationService {
     _aliveCheckTimer?.cancel();
     _listsSubscription?.cancel();
     _lastNotifiedPositionNotifier.value = {};
+    _notifiedOverSpots.clear();
     bannerMessageNotifier.value = null;
   }
 
@@ -172,8 +176,17 @@ class NotificationService {
         final key = i.toString();
         if (spotsMap.containsKey(key)) {
           final d = spotsMap[key];
-          if (d is Map && d['userId'] == userId && !(d['isOver'] == true)) {
-            foundMe = true;
+          if (d is Map && d['userId'] == userId) {
+            if (d['isOver'] == true) {
+              // User's spot was marked as set-over — fire notification
+              final overSpotKey = '$listId:$key';
+              if (!_notifiedOverSpots.contains(overSpotKey)) {
+                _notifiedOverSpots.add(overSpotKey);
+                _showSetOverNotification(listName);
+              }
+            } else {
+              foundMe = true;
+            }
           } else if (d is Map && !(d['isOver'] == true)) {
             performersAhead++;
           }
@@ -329,6 +342,53 @@ class NotificationService {
           'timestamp': FieldValue.serverTimestamp(),
         });
       } catch (_) {}
+    }
+  }
+
+  Future<void> _showSetOverNotification(String listName) async {
+    debugPrint('[Notification] _showSetOverNotification called: list=$listName');
+    LogManager().log('_showSetOverNotification: list=$listName');
+
+    if (kIsWeb) {
+      debugPrint('[Notification] Skipped set-over: web platform');
+      return;
+    }
+
+    // Show a notification that requires manual dismiss
+    try {
+      await AwesomeNotifications().createNotification(
+        content: NotificationContent(
+          id: 'set_over_${listName}'.hashCode + DateTime.now().millisecondsSinceEpoch,
+          channelKey: 'spot_updates_channel',
+          title: 'Set Over: $listName',
+          body: 'Your set is over! Great job!',
+          payload: {'listName': listName, 'type': 'set_over'},
+          notificationLayout: NotificationLayout.Default,
+          locked: false,
+          autoDismissible: true,
+        ),
+      );
+      debugPrint('[Notification] Set-over notification SUCCEEDED');
+      LogManager().log('Set-over notification SUCCEEDED');
+
+      // Firestore diagnostic
+      FirebaseFirestore.instance.collection('client_logs').add({
+        'level': 'info',
+        'message': 'set_over_notification_created',
+        'meta': {'listName': listName},
+        'timestamp': FieldValue.serverTimestamp(),
+      }).catchError((_) {});
+
+      HapticFeedback.heavyImpact();
+    } catch (e) {
+      debugPrint('[Notification] ERROR creating set-over notification: $e');
+      LogManager().log('ERROR creating set-over notification: $e');
+      FirebaseFirestore.instance.collection('client_logs').add({
+        'level': 'error',
+        'message': 'set_over_notification_failed',
+        'meta': {'error': e.toString(), 'listName': listName},
+        'timestamp': FieldValue.serverTimestamp(),
+      }).catchError((_) {});
     }
   }
 }
