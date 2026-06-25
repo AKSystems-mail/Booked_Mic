@@ -145,7 +145,7 @@ class NotificationService {
 
         final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
 
-        if (lastNotifiedPosition == null || currentPositionIndex < lastNotifiedPosition) {
+        if (lastNotifiedPosition != null && currentPositionIndex < lastNotifiedPosition) {
           _showCustomPositionNotification(
               listId,
               listName,
@@ -199,15 +199,13 @@ class NotificationService {
     bool isUpNext = false;
 
     if (currentPositionIndex == 0) {
-      body = "YOU ARE ON"; // Factual status for UI/Widget
+      body = "You're on!";
       isOnStage = true;
     } else if (currentPositionIndex == 1) {
-      body = "You're up next! Get ready.";
+      body = "You're up next!";
       isUpNext = true;
-    } else if (currentPositionIndex == 2) {
-      body = "There are 2 performers ahead of you.";
     } else {
-      body = "There are $currentPositionIndex performers ahead of you.";
+      body = "Moved to spot #${currentPositionIndex + 1} • ${currentPositionIndex} ahead";
     }
 
     // Set UI banner
