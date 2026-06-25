@@ -15,6 +15,7 @@ class NotificationService {
 
   StreamSubscription<QuerySnapshot>? _listsSubscription;
   Timer? _heartbeatTimer;
+  Timer? _aliveCheckTimer;
   String? _userId;
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
@@ -33,6 +34,13 @@ class NotificationService {
     _userId = userId;
     LogManager().init();
     LogManager().log('startListening called for userId=$userId');
+
+    // Request notification permission BEFORE setting up Firestore listener
+    // to avoid race where a snapshot fires before permission is granted
+    if (!kIsWeb) {
+      AwesomeNotifications().requestPermissionToSendNotifications();
+    }
+
     if (_listsSubscription != null) {
       _listsSubscription!.cancel();
     }
@@ -42,11 +50,19 @@ class NotificationService {
         .snapshots()
         .listen((snapshot) {
       _updateAndNotifyPositions(snapshot.docs, userId);
+    }, onError: (error) {
+      debugPrint('[Notification] Firestore listener ERROR: $error');
+      LogManager().log('Firestore listener ERROR: $error');
+      // Write to Firestore so we can see the failure server-side
+      FirebaseFirestore.instance.collection('client_logs').add({
+        'level': 'error',
+        'message': 'firestore_listener_error',
+        'meta': {'error': error.toString(), 'userId': userId},
+        'timestamp': FieldValue.serverTimestamp(),
+      }).catchError((_) {});
     });
-    if (!kIsWeb) {
-      AwesomeNotifications().requestPermissionToSendNotifications();
-    }
     _startHeartbeat();
+    _startAliveCheck();
     _fetchAndUpdateNearbyMicsWidget();
   }
 
@@ -70,6 +86,22 @@ class NotificationService {
     _nearbyMicsTimer?.cancel();
     _nearbyMicsTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       _fetchAndUpdateNearbyMicsWidget();
+    });
+  }
+
+  void _startAliveCheck() {
+    // Diagnostic heartbeat: writes to Firestore client_logs every 5 minutes
+    // so we can verify the app is alive and the listener is active
+    _aliveCheckTimer?.cancel();
+    _aliveCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (_userId != null) {
+        FirebaseFirestore.instance.collection('client_logs').add({
+          'level': 'info',
+          'message': 'app_heartbeat',
+          'meta': {'userId': _userId, 'type': 'periodic_alive_check'},
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      }
     });
   }
 
@@ -108,6 +140,7 @@ class NotificationService {
   void stopListening() {
     _heartbeatTimer?.cancel();
     _nearbyMicsTimer?.cancel();
+    _aliveCheckTimer?.cancel();
     _listsSubscription?.cancel();
     _lastNotifiedPositionNotifier.value = {};
     bannerMessageNotifier.value = null;
@@ -267,6 +300,13 @@ class NotificationService {
         );
         debugPrint('[Notification] createNotification succeeded');
         LogManager().log('createNotification SUCCEEDED');
+        // Firestore diagnostic: confirm notification was created
+        FirebaseFirestore.instance.collection('client_logs').add({
+          'level': 'info',
+          'message': 'notification_created',
+          'meta': {'listId': listId, 'listName': listName, 'position': currentPositionIndex, 'body': body},
+          'timestamp': FieldValue.serverTimestamp(),
+        }).catchError((_) {});
 
         // Physical vibration on every move forward
         HapticFeedback.heavyImpact();
