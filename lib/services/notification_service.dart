@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'widget_service.dart';
+import '../utils/log_manager.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -30,6 +31,8 @@ class NotificationService {
 
   void startListening(String userId) {
     _userId = userId;
+    LogManager().init();
+    LogManager().log('startListening called for userId=$userId');
     if (_listsSubscription != null) {
       _listsSubscription!.cancel();
     }
@@ -47,9 +50,12 @@ class NotificationService {
     _fetchAndUpdateNearbyMicsWidget();
   }
 
+  Timer? _nearbyMicsTimer;
+
   void _startHeartbeat() {
+    // Widget-only heartbeat: 10s — local broadcast, no network cost
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_lastListName.isNotEmpty && !kIsWeb) {
         WidgetService.updateUpNextWidget(
           listName: _lastListName,
@@ -58,6 +64,11 @@ class NotificationService {
           isUpNext: _lastIsUpNext,
         );
       }
+    });
+
+    // Nearby mics query: 60s — costs a Firestore read per tick
+    _nearbyMicsTimer?.cancel();
+    _nearbyMicsTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       _fetchAndUpdateNearbyMicsWidget();
     });
   }
@@ -96,6 +107,7 @@ class NotificationService {
 
   void stopListening() {
     _heartbeatTimer?.cancel();
+    _nearbyMicsTimer?.cancel();
     _listsSubscription?.cancel();
     _lastNotifiedPositionNotifier.value = {};
     bannerMessageNotifier.value = null;
@@ -107,11 +119,15 @@ class NotificationService {
 
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs, String userId) {
     final Map<String, int?> currentPositions = {};
+    bool foundUserInAnyList = false;
+
+    LogManager().log('_updateAndNotifyPositions: ${docs.length} docs received for userId=$userId');
 
     for (var doc in docs) {
       final listData = doc.data() as Map<String, dynamic>? ?? {};
       final String listId = doc.id;
       final String listName = listData['listName'] ?? 'Unnamed List';
+      LogManager().log('  Doc: id=$listId name=$listName');
 
       final spotsMap = listData['spots'] as Map<String, dynamic>? ?? {};
       final numRegular = (listData['numberOfSpots'] ?? 0) as int;
@@ -133,8 +149,10 @@ class NotificationService {
 
       final int? currentPositionIndex = foundMe ? performersAhead : null;
       currentPositions[listId] = currentPositionIndex;
+      LogManager().log('  Position: foundMe=$foundMe performersAhead=$performersAhead currentPositionIndex=$currentPositionIndex');
 
       if (currentPositionIndex != null) {
+        foundUserInAnyList = true;
         final int totalActive = performersAhead + 1;
         final bool isOnStage = currentPositionIndex == 0;
         final bool isUpNext = currentPositionIndex == 1;
@@ -145,6 +163,11 @@ class NotificationService {
 
         final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
 
+        final bool shouldFire = lastNotifiedPosition == null || currentPositionIndex < lastNotifiedPosition;
+        LogManager().log('  Notification decision: lastNotified=$lastNotifiedPosition shouldFire=$shouldFire');
+
+        debugPrint('[Notification] Decision: listId=$listId pos=$currentPositionIndex lastNotified=$lastNotifiedPosition shouldFire=$shouldFire');
+
         if (lastNotifiedPosition == null || currentPositionIndex < lastNotifiedPosition) {
           _showCustomPositionNotification(
               listId,
@@ -153,6 +176,14 @@ class NotificationService {
               totalActive);
         }
       }
+    }
+
+    // If user is no longer found in ANY list (e.g. list was deleted or signup removed),
+    // clear the widget data so it stops showing stale info
+    LogManager().log('  Post-loop: foundUserInAnyList=$foundUserInAnyList _lastListName="$_lastListName"');
+    if (!foundUserInAnyList && _lastListName.isNotEmpty) {
+      LogManager().log('  Clearing widget data — user no longer in any list');
+      _updateWidgetData('', '--', false, false);
     }
 
     // Update global state
@@ -214,9 +245,14 @@ class NotificationService {
     bannerMessageNotifier.value = body;
     isUpNextNotifier.value = isUpNext || isOnStage;
 
+    debugPrint('[Notification] _showCustomPositionNotification called: list=$listName pos=$currentPositionIndex isOnStage=$isOnStage');
+    LogManager().log('_showCustomPositionNotification: list=$listName pos=$currentPositionIndex isOnStage=$isOnStage kIsWeb=$kIsWeb');
+
     try {
       // ONLY send push notification if NOT on stage (redundant since they get notified at #2)
       if (!kIsWeb && !isOnStage) {
+        debugPrint('[Notification] Attempting AwesomeNotifications().createNotification...');
+        LogManager().log('Calling AwesomeNotifications().createNotification()...');
         await AwesomeNotifications().createNotification(
           content: NotificationContent(
             id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch,
@@ -229,12 +265,30 @@ class NotificationService {
             autoDismissible: !isUpNext,
           ),
         );
+        debugPrint('[Notification] createNotification succeeded');
+        LogManager().log('createNotification SUCCEEDED');
 
         // Physical vibration on every move forward
         HapticFeedback.heavyImpact();
+      } else if (kIsWeb) {
+        debugPrint('[Notification] Skipped: web platform');
+        LogManager().log('Skipped notification: kIsWeb=true');
+      } else if (isOnStage) {
+        debugPrint('[Notification] Skipped: user is on stage');
+        LogManager().log('Skipped notification: isOnStage=true');
       }
     } catch (e) {
-      // Log errors
+      debugPrint('[Notification] ERROR creating notification: $e');
+      LogManager().log('ERROR creating notification: $e');
+      // Firestore diagnostic log
+      try {
+        await FirebaseFirestore.instance.collection('client_logs').add({
+          'level': 'error',
+          'message': 'notification_create_failed',
+          'meta': {'error': e.toString(), 'listId': listId, 'listName': listName, 'position': currentPositionIndex},
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
     }
   }
 }
