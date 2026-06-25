@@ -140,7 +140,7 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
             const userDoc = await admin.firestore().collection("users").doc(userId).get();
             const fcmTokens = userDoc.data()?.fcmTokens as string[] | undefined;
             if (fcmTokens && fcmTokens.length > 0) {
-              const body = newKey === "1" ? "You are up next!" : `You are now at spot #${newKey}.`;
+              const body = newKey === "1" ? "You're up next!" : `Moved to spot #${newKey} • ${parseInt(newKey) - 1} ahead`;
               await admin.messaging().sendEachForMulticast({
                 data: {
                   type: "spot_update",
@@ -252,9 +252,9 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
             if (fcmTokens && fcmTokens.length > 0) {
               let body = "Your spot has updated.";
               if (spotKey === "1") {
-                body = "You are up next!";
+                body = "You're up next!";
               } else {
-                body = `You are now at spot #${spotKey}.`;
+                body = `Moved to spot #${spotKey} • ${parseInt(spotKey) - 1} ahead`;
               }
               
               await admin.messaging().sendEachForMulticast({
