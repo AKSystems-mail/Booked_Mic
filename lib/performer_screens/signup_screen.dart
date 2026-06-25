@@ -264,18 +264,14 @@ class _SignupScreenState extends State<SignupScreen> {
       final spotData = spotsMap[spotKey];
       bool isAvailable = spotData == null;
       bool isTakenByMe = false;
-      bool isOver = false;
       String titleText = 'Available';
       Color titleColor = Colors.green.shade700;
-      TextDecoration textDecoration = TextDecoration.none;
       
       if (spotData is Map && spotData.isNotEmpty) {
          isAvailable = false;
          isTakenByMe = spotData['userId'] == _performerId;
-         isOver = spotData['isOver'] == true;
          titleText = isTakenByMe ? (spotData['name'] ?? 'You') : 'Taken';
-         titleColor = isOver ? Colors.grey.shade400 : (isTakenByMe ? Colors.blue.shade800 : Colors.grey.shade600);
-         textDecoration = isOver ? TextDecoration.lineThrough : TextDecoration.none;
+         titleColor = isTakenByMe ? Colors.blue.shade800 : Colors.grey.shade600;
       }
 
       bool isSelectedByMe = _selectedSpotKey == spotKey;
@@ -286,7 +282,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
       String spotLabel = type == SpotType.regular ? "${displayIndex + 1}." : "W${displayIndex + 1}.";
 
-      Widget trailingWidget = isTakenByMe && !isOver
+      Widget trailingWidget = isTakenByMe 
           ? IconButton(icon: Icon(Icons.remove_circle_outline, color: Colors.red.shade400), onPressed: () => _showRemoveConfirmationDialog(spotKey).then((val) { if (val == true) _removeSignup(spotKey); }))
           : (isSelectedByMe ? Row(mainAxisSize: MainAxisSize.min, children: [IconButton(icon: const Icon(Icons.check_circle, color: Colors.green), onPressed: _confirmSelection), IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: _cancelSelection)]) : const SizedBox(width: 40));
 
@@ -298,7 +294,7 @@ class _SignupScreenState extends State<SignupScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             child: ListTile(
                leading: Text(spotLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
-               title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: isTakenByMe || isSelectedByMe ? FontWeight.bold : FontWeight.normal, decoration: textDecoration)),
+               title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: isTakenByMe || isSelectedByMe ? FontWeight.bold : FontWeight.normal)),
                trailing: trailingWidget,
                onTap: isAvailable ? () => _selectSpot(spotKey, true) : null,
             ),

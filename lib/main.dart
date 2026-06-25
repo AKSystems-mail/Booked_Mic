@@ -117,21 +117,6 @@ Future<void> main() async {
      debugPrint("Error loading .env file: $e");
   }
 
-  // Request notification permission on Android 13+ (mandatory for local pushes)
-  if (!kIsWeb) {
-    try {
-      final androidPlugin = flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      if (androidPlugin != null) {
-        await androidPlugin.requestNotificationsPermission();
-        debugPrint('[main] POST_NOTIFICATIONS permission requested');
-      }
-    } catch (e) {
-      debugPrint('[main] Error requesting notification permission: $e');
-    }
-  }
-
   // Notification initialization (mobile only)
   if (!kIsWeb) {
     AwesomeNotifications().initialize(
@@ -154,35 +139,6 @@ Future<void> main() async {
   final DarwinInitializationSettings initializationSettingsIOS = DarwinInitializationSettings(requestAlertPermission: true, requestBadgePermission: true, requestSoundPermission: true);
   final InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid, iOS: initializationSettingsIOS);
   await flutterLocalNotificationsPlugin.initialize(initializationSettings, onDidReceiveNotificationResponse: onDidReceiveNotificationResponse);
-
-  // Foreground FCM handler — show system notification when app is open
-  if (!kIsWeb) {
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      final data = message.data;
-      if (data['type'] == 'spot_update') {
-        final title = data['title'] ?? 'Booked Mic Update';
-        final body = data['body'] ?? 'Your spot has updated.';
-        final listId = data['listId'] ?? '';
-
-        flutterLocalNotificationsPlugin.show(
-          listId.hashCode + data.hashCode + DateTime.now().millisecondsSinceEpoch,
-          title,
-          body,
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'spot_updates_channel',
-              'Spot Updates',
-              channelDescription: 'Notifications for queue position updates',
-              importance: Importance.high,
-              priority: Priority.high,
-            ),
-          ),
-          payload: listId,
-        );
-        debugPrint('[main] Foreground FCM handled: type=$title body=$body');
-      }
-    });
-  }
 
   runApp(
     MultiProvider(
