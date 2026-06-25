@@ -122,6 +122,26 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
       }
     }
 
+    // --- Detect if a spot was marked isOver (false → true) ---
+    if (removedSpotNumber === null) {
+      for (let i = 1; i <= numberOfSpots; i++) {
+        const key = i.toString();
+        const beforeSpot = beforeSpots[key];
+        const afterSpot = afterSpots[key];
+        if (
+          Object.prototype.hasOwnProperty.call(beforeSpots, key) &&
+          Object.prototype.hasOwnProperty.call(afterSpots, key) &&
+          typeof beforeSpot === 'object' && beforeSpot !== null &&
+          typeof afterSpot === 'object' && afterSpot !== null &&
+          !(beforeSpot.isOver === true) &&
+          afterSpot.isOver === true
+        ) {
+          logger.info(`[${listId}] Detected isOver marked on spot: ${key} — no shifts or notifications.`);
+          return; // Exit without shifting
+        }
+      }
+    }
+
     if (removedSpotNumber === null) {
       // Reorder detection: performers whose position changed without key removal
       const reorderNotifications: Array<{ userId: string; newKey: string }> = [];
@@ -324,6 +344,44 @@ export const allocateHostCode = onCall(async (request) => {
   }
 
   throw new HttpsError('resource-exhausted', 'Unable to generate unique host code after multiple attempts.');
+});
+
+// Fetches recent diagnostic logs from client_logs collection for remote debugging.
+// Returns up to 50 entries, newest first. Filters to notification-related logs by default.
+export const getDiagnosticLogs = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError('unauthenticated', 'Must be authenticated to read logs.');
+  }
+  const limit = Math.min(request.data.limit ?? 50, 200);
+  const filterBy = request.data.filter ?? 'Notification';
+
+  try {
+    let query: admin.firestore.Query = admin.firestore()
+      .collection('client_logs')
+      .orderBy('timestamp', 'desc')
+      .limit(limit);
+
+    const snapshot = await query.get();
+    const logs = snapshot.docs.map(doc => ({
+      id: doc.id,
+      level: doc.data().level,
+      message: doc.data().message,
+      uid: doc.data().uid,
+      meta: doc.data().meta ?? {},
+      timestamp: doc.data().timestamp?.toDate?.()?.toISOString() ?? null,
+    }));
+
+    // Filter in-memory for flexibility
+    const filtered = filterBy
+      ? logs.filter(l => l.message?.toLowerCase().includes(filterBy.toLowerCase()))
+      : logs;
+
+    return { logs: filtered, total: logs.length, filtered: filtered.length };
+  } catch (error: any) {
+    logger.error('Error fetching diagnostic logs:', error);
+    throw new HttpsError('internal', 'Failed to fetch diagnostic logs.');
+  }
 });
 
 // Scheduled cleanup: delete client_logs older than 7 days
