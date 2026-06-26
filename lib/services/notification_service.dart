@@ -21,6 +21,19 @@ class NotificationService {
   // Track previous isOver state per spot to detect transition
   final Map<String, Map<String, bool>> _spotIsOverStates = {};
 
+  /// Diagnostic logging to Firestore client_logs collection.
+  Future<void> _logDiag(String msg, {String? uid, Map<String, dynamic>? meta}) async {
+    try {
+      await FirebaseFirestore.instance.collection('client_logs').add({
+        'level': 'debug',
+        'message': '[notif] $msg',
+        'uid': uid ?? _userId ?? 'unknown',
+        'meta': meta ?? {},
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+
   // New: Notifier for the UI banner
   final ValueNotifier<String?> bannerMessageNotifier = ValueNotifier(null);
   final ValueNotifier<bool> isUpNextNotifier = ValueNotifier(false);
@@ -110,6 +123,7 @@ class NotificationService {
   }
 
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs, String userId) {
+    _logDiag('update_positions_called', meta: {'numDocs': docs.length, 'userId': userId});
     final Map<String, int?> currentPositions = {};
 
     for (var doc in docs) {
@@ -139,6 +153,23 @@ class NotificationService {
         }
       }
 
+      _logDiag('loop_result',
+        meta: {
+          'listId': listId,
+          'listName': listName,
+          'mySpotKey': mySpotKey ?? 'null',
+          'foundMe': foundMe,
+          'performersAhead': performersAhead,
+          'spotIsOver': mySpotKey != null && spotsMap[mySpotKey] is Map
+              ? spotsMap[mySpotKey]['isOver'] is bool
+                  ? spotsMap[mySpotKey]['isOver'].toString()
+                  : 'not_bool'
+              : 'n/a',
+          'numRegular': numRegular,
+          'spotsKeys': (spotsMap.keys).join(','),
+        },
+      );
+
       // --- Detect isOver transition (active -> marked done) ---
       if (mySpotKey != null) {
         final prevOverStates = _spotIsOverStates.putIfAbsent(listId, () => {});
@@ -146,8 +177,19 @@ class NotificationService {
         final nowOver = spotsMap[mySpotKey] is Map && (spotsMap[mySpotKey]['isOver'] == true);
         prevOverStates[mySpotKey] = nowOver;
 
+        _logDiag('isover_check',
+          meta: {
+            'listId': listId,
+            'mySpotKey': mySpotKey,
+            'wasOver': wasOver,
+            'nowOver': nowOver,
+            'shouldNotify': (!wasOver && nowOver).toString(),
+          },
+        );
+
         if (!wasOver && nowOver) {
           // Spot just got marked done — fire "Your set is over" notification
+          _logDiag('firing_isover_notification', meta: {'listId': listId, 'listName': listName});
           _showCustomIsOverNotification(listId, listName);
           // Clear cached position for this list so next loop treats it fresh
           final updated = Map<String, int?>.from(_lastNotifiedPositionNotifier.value);
@@ -188,7 +230,9 @@ class NotificationService {
       if (!docIds.contains(listId)) {
         _spotIsOverStates.remove(listId);
       } else {
-        final spotsInDoc = docs.firstWhere((d) => d.id == listId).data()['spots'] as Map<String, dynamic>? ?? {};
+        final doc = docs.firstWhere((d) => d.id == listId);
+        final docData = doc.data() as Map<String, dynamic>? ?? {};
+        final spotsInDoc = docData['spots'] as Map<String, dynamic>? ?? {};
         _spotIsOverStates[listId]!.removeWhere((key, _) => !spotsInDoc.containsKey(key));
       }
     }
