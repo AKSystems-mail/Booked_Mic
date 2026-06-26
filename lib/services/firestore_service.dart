@@ -197,9 +197,23 @@ class FirestoreService {
   }
 
   Future<void> setSpotOver(String listId, String spotKey, bool isOver, String performerId) async {
-    Map<String, dynamic> updateData = {'spots.$spotKey.isOver': isOver};
-    if (!isOver && performerId.isNotEmpty) updateData['spots.$spotKey.name'] = 'Reserved';
-    await _db.collection(_listCollection).doc(listId).update(updateData);
+    final docRef = _db.collection(_listCollection).doc(listId);
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(docRef);
+      if (!snapshot.exists) return;
+      final data = snapshot.data() as Map<String, dynamic>;
+      final spots = Map<String, dynamic>.from(data['spots'] ?? {});
+      final spotEntry = Map<String, dynamic>.from(spots[spotKey] ?? {});
+      spotEntry['isOver'] = isOver;
+      if (!isOver && performerId.isNotEmpty) {
+        spotEntry['name'] = 'Reserved';
+      }
+      Map<String, dynamic> updateData = {
+        'spots.$spotKey': spotEntry,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      transaction.update(docRef, updateData);
+    });
   }
 
   // --- Missing methods for FirestoreProvider ---
