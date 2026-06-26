@@ -123,6 +123,40 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
     }
 
     if (removedSpotNumber === null) {
+      // --- isOver detection: spot was marked 'done' ---
+      for (const [key, newValue] of Object.entries(afterSpots)) {
+        if (typeof newValue === 'object' && newValue !== null && 'userId' in newValue && newValue.userId) {
+          if (newValue.isOver === true) {
+            const oldValue = beforeSpots[key];
+            const wasOver = typeof oldValue === 'object' && oldValue !== null && oldValue.isOver === true;
+            if (!wasOver) {
+              // Transition: active -> isOver — notify performer
+              const listName: string = afterData.listName ?? 'Unnamed List';
+              const userId: string = newValue.userId;
+              try {
+                const userDoc = await admin.firestore().collection("users").doc(userId).get();
+                const fcmTokens = userDoc.data()?.fcmTokens as string[] | undefined;
+                if (fcmTokens && fcmTokens.length > 0) {
+                  await admin.messaging().sendEachForMulticast({
+                    data: {
+                      type: "spot_update",
+                      title: `Set Over: ${listName}`,
+                      body: `Your set at ${listName} is over!`,
+                      listId: listId,
+                      spot: key,
+                    },
+                    tokens: fcmTokens,
+                  });
+                  logger.info(`[${listId}] Notified user ${userId} about isOver at spot ${key}`);
+                }
+              } catch (notifError) {
+                logger.error(`[${listId}] Error notifying user ${userId} about isOver:`, notifError);
+              }
+            }
+          }
+        }
+      }
+
       // Reorder detection: performers whose position changed without key removal
       const reorderNotifications: Array<{ userId: string; newKey: string }> = [];
       for (const [newKey, newValue] of Object.entries(afterSpots)) {

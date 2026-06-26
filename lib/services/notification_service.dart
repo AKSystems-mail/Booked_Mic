@@ -17,7 +17,10 @@ class NotificationService {
   String? _userId;
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
-  
+
+  // Track previous isOver state per spot to detect transition
+  final Map<String, Map<String, bool>> _spotIsOverStates = {};
+
   // New: Notifier for the UI banner
   final ValueNotifier<String?> bannerMessageNotifier = ValueNotifier(null);
   final ValueNotifier<bool> isUpNextNotifier = ValueNotifier(false);
@@ -98,6 +101,7 @@ class NotificationService {
     _heartbeatTimer?.cancel();
     _listsSubscription?.cancel();
     _lastNotifiedPositionNotifier.value = {};
+    _spotIsOverStates.clear();
     bannerMessageNotifier.value = null;
   }
 
@@ -118,16 +122,39 @@ class NotificationService {
       
       int performersAhead = 0;
       bool foundMe = false;
+      String? mySpotKey;
 
       for (int i = 1; i <= numRegular && !foundMe; i++) {
         final key = i.toString();
         if (spotsMap.containsKey(key)) {
           final d = spotsMap[key];
-          if (d is Map && d['userId'] == userId && !(d['isOver'] == true)) {
-            foundMe = true;
+          if (d is Map && d['userId'] == userId) {
+            mySpotKey = key;
+            if (!(d['isOver'] == true)) {
+              foundMe = true;
+            }
           } else if (d is Map && !(d['isOver'] == true)) {
             performersAhead++;
           }
+        }
+      }
+
+      // --- Detect isOver transition (active -> marked done) ---
+      if (mySpotKey != null) {
+        final prevOverStates = _spotIsOverStates.putIfAbsent(listId, () => {});
+        final wasOver = prevOverStates[mySpotKey] ?? false;
+        final nowOver = spotsMap[mySpotKey] is Map && (spotsMap[mySpotKey]['isOver'] == true);
+        prevOverStates[mySpotKey] = nowOver;
+
+        if (!wasOver && nowOver) {
+          // Spot just got marked done — fire "Your set is over" notification
+          _showCustomIsOverNotification(listId, listName);
+          // Clear cached position for this list so next loop treats it fresh
+          final updated = Map<String, int?>.from(_lastNotifiedPositionNotifier.value);
+          updated.remove(listId);
+          _lastNotifiedPositionNotifier.value = updated;
+          // Do not process reorder notification for this list
+          continue;
         }
       }
 
@@ -155,6 +182,17 @@ class NotificationService {
       }
     }
 
+    // Clean up stale isOver tracking for spots that no longer exist
+    for (final listId in _spotIsOverStates.keys.toList()) {
+      final docIds = docs.map((d) => d.id).toSet();
+      if (!docIds.contains(listId)) {
+        _spotIsOverStates.remove(listId);
+      } else {
+        final spotsInDoc = docs.firstWhere((d) => d.id == listId).data()['spots'] as Map<String, dynamic>? ?? {};
+        _spotIsOverStates[listId]!.removeWhere((key, _) => !spotsInDoc.containsKey(key));
+      }
+    }
+
     // Update global state
     final Map<String, int?> nextNotifierValue = Map.from(_lastNotifiedPositionNotifier.value);
     currentPositions.forEach((listId, position) {
@@ -173,6 +211,33 @@ class NotificationService {
 
     if (!mapEquals(_lastNotifiedPositionNotifier.value, nextNotifierValue)) {
       _lastNotifiedPositionNotifier.value = nextNotifierValue;
+    }
+  }
+
+  Future<void> _showCustomIsOverNotification(String listId, String listName) async {
+    final title = 'Set Over: $listName';
+    final body = "Your set at $listName is over!";
+
+    // Set UI banner
+    bannerMessageNotifier.value = body;
+    isUpNextNotifier.value = false;
+
+    try {
+      if (!kIsWeb) {
+        await AwesomeNotifications().createNotification(
+          content: NotificationContent(
+            id: 'over_${listId}_${DateTime.now().millisecondsSinceEpoch}'.hashCode,
+            channelKey: 'spot_updates_channel',
+            title: title,
+            body: body,
+            payload: {'listId': listId, 'type': 'isOver'},
+            notificationLayout: NotificationLayout.Default,
+          ),
+        );
+        HapticFeedback.heavyImpact();
+      }
+    } catch (e) {
+      // Swallow notification errors
     }
   }
 
