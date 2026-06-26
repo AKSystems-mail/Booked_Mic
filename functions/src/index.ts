@@ -20,6 +20,27 @@ function findUserSpotKey(spots: { [key: string]: any }, userId: string): string 
 }
 
 /**
+ * Counts active (non-isOver) performers ahead of a given spot key.
+ * Handles both numeric main-list keys ("1", "2") and waitlist keys ("W1", "W2").
+ */
+function countActiveAhead(spots: { [key: string]: any }, targetKey: string): number {
+  const targetNum = targetKey.startsWith('W')
+    ? parseInt(targetKey.substring(1)) + 100000
+    : parseInt(targetKey);
+  let count = 0;
+  for (const [key, value] of Object.entries(spots)) {
+    if (typeof value !== 'object' || value === null || !value.userId) continue;
+    const thisNum = key.startsWith('W')
+      ? parseInt(key.substring(1)) + 100000
+      : parseInt(key);
+    if (!isNaN(thisNum) && !isNaN(targetNum) && thisNum < targetNum && !value.isOver) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
  * Finds a user's UID by their Host Code.
  */
 export const findUserByHostCode = onCall(async (request) => {
@@ -151,6 +172,43 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                 }
               } catch (notifError) {
                 logger.error(`[${listId}] Error notifying user ${userId} about isOver:`, notifError);
+              }
+
+              // --- Notify remaining performers whose position improved ---
+              for (const [otherKey, otherValue] of Object.entries(afterSpots)) {
+                if (otherKey === key) continue;
+                if (typeof otherValue !== 'object' || otherValue === null || !otherValue.userId) continue;
+                if (otherValue.isOver === true) continue;
+
+                const oldAhead = countActiveAhead(beforeSpots, otherKey);
+                const newAhead = countActiveAhead(afterSpots, otherKey);
+
+                if (newAhead < oldAhead) {
+                  const otherUserId: string = otherValue.userId;
+                  try {
+                    const otherUserDoc = await admin.firestore().collection("users").doc(otherUserId).get();
+                    const otherTokens = otherUserDoc.data()?.fcmTokens as string[] | undefined;
+                    if (otherTokens && otherTokens.length > 0) {
+                      const newSpotNum = newAhead + 1;
+                      const body = newSpotNum === 1
+                        ? "You're up next!"
+                        : `Moved to spot #${newSpotNum} • ${newAhead} ahead`;
+                      await admin.messaging().sendEachForMulticast({
+                        data: {
+                          type: "spot_update",
+                          title: "Booked Mic Update",
+                          body: body,
+                          listId: listId,
+                          spot: otherKey,
+                        },
+                        tokens: otherTokens,
+                      });
+                      logger.info(`[${listId}] Notified remaining performer ${otherUserId} (${otherKey}) — position improved ${oldAhead}→${newAhead}`);
+                    }
+                  } catch (otherNotifError) {
+                    logger.error(`[${listId}] Error notifying remaining performer ${otherUserId}:`, otherNotifError);
+                  }
+                }
               }
             }
           }

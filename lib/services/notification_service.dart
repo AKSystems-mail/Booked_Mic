@@ -18,9 +18,6 @@ class NotificationService {
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
 
-  // Track previous isOver state per spot to detect transition
-  final Map<String, Map<String, bool>> _spotIsOverStates = {};
-
   /// Diagnostic logging to Firestore client_logs collection.
   Future<void> _logDiag(String msg, {String? uid, Map<String, dynamic>? meta}) async {
     try {
@@ -114,7 +111,6 @@ class NotificationService {
     _heartbeatTimer?.cancel();
     _listsSubscription?.cancel();
     _lastNotifiedPositionNotifier.value = {};
-    _spotIsOverStates.clear();
     bannerMessageNotifier.value = null;
   }
 
@@ -170,36 +166,6 @@ class NotificationService {
         },
       );
 
-      // --- Detect isOver transition (active -> marked done) ---
-      if (mySpotKey != null) {
-        final prevOverStates = _spotIsOverStates.putIfAbsent(listId, () => {});
-        final wasOver = prevOverStates[mySpotKey] ?? false;
-        final nowOver = spotsMap[mySpotKey] is Map && (spotsMap[mySpotKey]['isOver'] == true);
-        prevOverStates[mySpotKey] = nowOver;
-
-        _logDiag('isover_check',
-          meta: {
-            'listId': listId,
-            'mySpotKey': mySpotKey,
-            'wasOver': wasOver,
-            'nowOver': nowOver,
-            'shouldNotify': (!wasOver && nowOver).toString(),
-          },
-        );
-
-        if (!wasOver && nowOver) {
-          // Spot just got marked done — fire "Your set is over" notification
-          _logDiag('firing_isover_notification', meta: {'listId': listId, 'listName': listName});
-          _showCustomIsOverNotification(listId, listName);
-          // Clear cached position for this list so next loop treats it fresh
-          final updated = Map<String, int?>.from(_lastNotifiedPositionNotifier.value);
-          updated.remove(listId);
-          _lastNotifiedPositionNotifier.value = updated;
-          // Do not process reorder notification for this list
-          continue;
-        }
-      }
-
       final int? currentPositionIndex = foundMe ? performersAhead : null;
       currentPositions[listId] = currentPositionIndex;
 
@@ -224,19 +190,6 @@ class NotificationService {
       }
     }
 
-    // Clean up stale isOver tracking for spots that no longer exist
-    for (final listId in _spotIsOverStates.keys.toList()) {
-      final docIds = docs.map((d) => d.id).toSet();
-      if (!docIds.contains(listId)) {
-        _spotIsOverStates.remove(listId);
-      } else {
-        final doc = docs.firstWhere((d) => d.id == listId);
-        final docData = doc.data() as Map<String, dynamic>? ?? {};
-        final spotsInDoc = docData['spots'] as Map<String, dynamic>? ?? {};
-        _spotIsOverStates[listId]!.removeWhere((key, _) => !spotsInDoc.containsKey(key));
-      }
-    }
-
     // Update global state
     final Map<String, int?> nextNotifierValue = Map.from(_lastNotifiedPositionNotifier.value);
     currentPositions.forEach((listId, position) {
@@ -258,33 +211,6 @@ class NotificationService {
     }
   }
 
-  Future<void> _showCustomIsOverNotification(String listId, String listName) async {
-    final title = 'Set Over: $listName';
-    final body = "Your set at $listName is over!";
-
-    // Set UI banner
-    bannerMessageNotifier.value = body;
-    isUpNextNotifier.value = false;
-
-    try {
-      if (!kIsWeb) {
-        await AwesomeNotifications().createNotification(
-          content: NotificationContent(
-            id: 'over_${listId}_${DateTime.now().millisecondsSinceEpoch}'.hashCode,
-            channelKey: 'spot_updates_channel',
-            title: title,
-            body: body,
-            payload: {'listId': listId, 'type': 'isOver'},
-            notificationLayout: NotificationLayout.Default,
-          ),
-        );
-        HapticFeedback.heavyImpact();
-      }
-    } catch (e) {
-      // Swallow notification errors
-    }
-  }
-
   void _updateWidgetData(String listName, String spotNumber, bool isOnStage, bool isUpNext) {
     _lastListName = listName;
     _lastSpotNumber = spotNumber;
@@ -302,6 +228,13 @@ class NotificationService {
 
   Future<void> _showCustomPositionNotification(
       String listId, String listName, int currentPositionIndex, int totalActivePerformers) async {
+    _logDiag('position_notification',
+        meta: {
+          'listId': listId,
+          'listName': listName,
+          'currentPositionIndex': currentPositionIndex,
+          'totalActive': totalActivePerformers,
+        });
     String title = 'Spot Update: $listName';
     String body = '';
     bool isOnStage = false;
