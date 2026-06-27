@@ -1,5 +1,6 @@
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:flutter/foundation.dart';
@@ -12,22 +13,80 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
+  static const String _prefsKey = 'last_notified_positions';
+
   StreamSubscription<QuerySnapshot>? _listsSubscription;
   Timer? _heartbeatTimer;
   String? _userId;
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
+  /// Tracks which lists have been initialized from the first snapshot.
+  /// Prevents stale SharedPreferences values (e.g. position 0 from a prior
+  /// session) from suppressing all subsequent advancement notifications.
+  final Set<String> _initializedListIds = {};
 
-  /// Diagnostic logging to Firestore client_logs collection.
-  Future<void> _logDiag(String msg, {String? uid, Map<String, dynamic>? meta}) async {
+  // ── Terminology ────────────────────────────────────────────────
+  // Spot Key     : 1‑based string key into the spots map (e.g. "1", "7")
+  // Ahead Count  : # of active (non‑isOver) performers in lower‑index spots
+  //                Includes the person on stage (index 0).
+  // Advance      : Ahead Count decreases → notification fires
+  // Current Pos  : 0‑based; Current Pos 0 = On Stage, 1 = Up Next
+  // Mark Over    : Setting isOver=true on a spot when the performer finishes
+  // Position Notification : local notification on Advance
+  // ────────────────────────────────────────────────────────────────
+
+  /// Diagnostic logging — writes both a transient snapshot for remote
+  /// querying (no index needed) and an append‑only entry for history.
+  Future<void> _logDiag(String msg,
+      {String? uid, Map<String, dynamic>? meta, String? listId}) async {
+    final effectiveUid = uid ?? _userId ?? 'unknown';
     try {
+      // (a) Append‑only log to client_logs (needs composite index for ordering)
       await FirebaseFirestore.instance.collection('client_logs').add({
         'level': 'debug',
         'message': '[notif] $msg',
-        'uid': uid ?? _userId ?? 'unknown',
+        'uid': effectiveUid,
         'meta': meta ?? {},
         'timestamp': FieldValue.serverTimestamp(),
       });
+    } catch (_) {}
+    // (b) Pinned overwrite at diagnostics/{uid}/snapshots/{listId}
+    // Query this with a simple getDocument — no index required.
+    final diagKey = listId ?? 'general';
+    try {
+      final docRef = FirebaseFirestore.instance
+          .doc('diagnostics/$effectiveUid/snapshots/$diagKey');
+      await docRef.set({
+        'message': '[notif] $msg',
+        'meta': meta ?? {},
+        'ts': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+    // (c) debugPrint for real‑time logcat visibility
+    debugPrint('[notif] $msg${meta != null ? ' — $meta' : ''}');
+  }
+
+  /// Load persisted notification positions from SharedPreferences.
+  Future<void> _loadLastNotifiedPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsKey);
+      if (raw != null) {
+        final decoded = Map<String, dynamic>.from(
+            const JsonDecoder().convert(raw) as Map);
+        _lastNotifiedPositionNotifier.value = decoded.map(
+            (k, v) => MapEntry(k, v as int?));
+      }
+    } catch (_) {}
+  }
+
+  /// Persist the current notification positions to SharedPreferences.
+  Future<void> _saveLastNotifiedPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _prefsKey,
+          const JsonEncoder().convert(_lastNotifiedPositionNotifier.value));
     } catch (_) {}
   }
 
@@ -41,18 +100,40 @@ class NotificationService {
   bool _lastIsOnStage = false;
   bool _lastIsUpNext = false;
 
-  void startListening(String userId) {
+  Future<void> startListening(String userId) async {
     _userId = userId;
     if (_listsSubscription != null) {
       _listsSubscription!.cancel();
     }
+    // ── Load persisted positions FIRST so the first snapshot callback ──
+    // has the correct lastNotifiedPosition.  Must be done before
+    // subscribing to avoid a race where the listener saves a position
+    // that gets overwritten by a stale SharedPreferences value.
+    await _loadLastNotifiedPosition();
+
+    void _onData(QuerySnapshot snapshot) {
+      _updateAndNotifyPositions(snapshot.docs, userId);
+    }
+
+    void _onError(Object error) {
+      debugPrint('[notif] Snapshot listener error: $error — reconnecting in 5s');
+      Future.delayed(const Duration(seconds: 5), () {
+        startListening(userId);
+      });
+    }
+
+    void _onDone() {
+      debugPrint('[notif] Snapshot listener closed — reconnecting in 5s');
+      Future.delayed(const Duration(seconds: 5), () {
+        startListening(userId);
+      });
+    }
+
     _listsSubscription = FirebaseFirestore.instance
         .collection('Lists')
         .where('signedUpUserIds', arrayContains: userId)
         .snapshots()
-        .listen((snapshot) {
-      _updateAndNotifyPositions(snapshot.docs, userId);
-    });
+        .listen(_onData, onError: _onError, onDone: _onDone);
     if (!kIsWeb) {
       AwesomeNotifications().requestPermissionToSendNotifications();
     }
@@ -111,6 +192,7 @@ class NotificationService {
     _heartbeatTimer?.cancel();
     _listsSubscription?.cancel();
     _lastNotifiedPositionNotifier.value = {};
+    _initializedListIds.clear();
     bannerMessageNotifier.value = null;
   }
 
@@ -118,8 +200,19 @@ class NotificationService {
     bannerMessageNotifier.value = null;
   }
 
+  // ── Terminology ────────────────────────────────────────────────
+  // This method runs on every snapshot fire. For each list the user
+  // is signed up for, it:
+  //   1. Walks Spot Keys 1..numRegular, counting non‑isOver performers
+  //      as the Ahead Count.
+  //   2. Finds my spot — skipping it if Marked Over (isOver=true).
+  //   3. Computes Current Position (0‑based; 0 = On Stage).
+  //   4. Detects an Advance: Current Position < last notified position.
+  //   5. Fires a Position Notification on Advance.
+  // ────────────────────────────────────────────────────────────────
   void _updateAndNotifyPositions(List<QueryDocumentSnapshot> docs, String userId) {
-    _logDiag('update_positions_called', meta: {'numDocs': docs.length, 'userId': userId});
+    _logDiag('update_positions_called',
+        meta: {'numDocs': docs.length, 'userId': userId});
     final Map<String, int?> currentPositions = {};
 
     for (var doc in docs) {
@@ -143,13 +236,14 @@ class NotificationService {
             if (!(d['isOver'] == true)) {
               foundMe = true;
             }
-          } else if (d is Map && !(d['isOver'] == true)) {
+          } else if (d is Map && d['name'] != null && d['name'].toString().isNotEmpty && !(d['isOver'] == true)) {
             performersAhead++;
           }
         }
       }
 
       _logDiag('loop_result',
+        listId: listId,
         meta: {
           'listId': listId,
           'listName': listName,
@@ -178,14 +272,36 @@ class NotificationService {
         // Always update widget with latest position
         _updateWidgetData(listName, spotNumber, isOnStage, isUpNext);
 
+        // ── First snapshot for this list: set baseline from current state ─
+        // This prevents stale SharedPreferences values (e.g. position 0 from
+        // a prior session) from poisoning the advancement detection.
+        if (!_initializedListIds.contains(listId)) {
+          _initializedListIds.add(listId);
+          _lastNotifiedPositionNotifier.value[listId] = currentPositionIndex;
+          _saveLastNotifiedPosition();
+          continue;
+        }
+
         final int? lastNotifiedPosition = _lastNotifiedPositionNotifier.value[listId];
 
         if (lastNotifiedPosition != null && currentPositionIndex < lastNotifiedPosition) {
-          _showCustomPositionNotification(
-              listId,
-              listName,
-              currentPositionIndex,
-              totalActive);
+          // ── Missed-advancement guard ────────────────────────────────
+          // When the app is backgrounded, Android may suspend the
+          // snapshot listener.  On reconnection we get the final state
+          // but missed all intermediate advancements.
+          // If we jumped to position 0 (stage) from more than 1 ahead,
+          // fire the critical "You're up next!" as the last non-silent
+          // notification instead of silently dropping it.
+          // ────────────────────────────────────────────────────────────
+          if (currentPositionIndex == 0 && lastNotifiedPosition > 1) {
+            _showCustomPositionNotification(
+                listId, listName, 1, lastNotifiedPosition);
+          } else if (currentPositionIndex > 0) {
+            _showCustomPositionNotification(
+                listId, listName, currentPositionIndex, totalActive);
+          }
+          // position 0 with lastNotifiedPosition == 1: silent advancement
+          // to stage — no push needed.
         }
       }
     }
@@ -208,6 +324,7 @@ class NotificationService {
 
     if (!mapEquals(_lastNotifiedPositionNotifier.value, nextNotifierValue)) {
       _lastNotifiedPositionNotifier.value = nextNotifierValue;
+      _saveLastNotifiedPosition(); // persist through restarts
     }
   }
 
@@ -226,9 +343,16 @@ class NotificationService {
     }
   }
 
+  // ── Terminology ────────────────────────────────────────────────
+  // Position Notification — fires on Advance.
+  //   currentPositionIndex==0 → On Stage (banner+widget only, no push)
+  //   currentPositionIndex==1 → Up Next (locked notif, heavy haptic)
+  //   currentPositionIndex>1  → Spot #N • M ahead (standard push)
+  // ────────────────────────────────────────────────────────────────
   Future<void> _showCustomPositionNotification(
       String listId, String listName, int currentPositionIndex, int totalActivePerformers) async {
     _logDiag('position_notification',
+        listId: listId,
         meta: {
           'listId': listId,
           'listName': listName,
@@ -241,13 +365,15 @@ class NotificationService {
     bool isUpNext = false;
 
     if (currentPositionIndex == 0) {
-      body = "You're on!";
       isOnStage = true;
+      isUpNextNotifier.value = true;
+      // No banner or notification — silent stage
+      return;
     } else if (currentPositionIndex == 1) {
       body = "You're up next!";
       isUpNext = true;
     } else {
-      body = "Moved to spot #${currentPositionIndex + 1} • ${currentPositionIndex} ahead";
+      body = "${currentPositionIndex} ahead of you.";
     }
 
     // Set UI banner
@@ -255,8 +381,10 @@ class NotificationService {
     isUpNextNotifier.value = isUpNext || isOnStage;
 
     try {
-      // ONLY send push notification if NOT on stage (redundant since they get notified at #2)
-      if (!kIsWeb && !isOnStage) {
+      // Local notification for spot #2 only ("You're up next!").
+      // Spot #1 (on stage) gets no notification — performer is already live.
+      // All other positions handled by FCM system push.
+      if (!kIsWeb && currentPositionIndex == 1) {
         await AwesomeNotifications().createNotification(
           content: NotificationContent(
             id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch,
@@ -270,7 +398,7 @@ class NotificationService {
           ),
         );
 
-        // Physical vibration on every move forward
+        // Physical vibration on move forward
         HapticFeedback.heavyImpact();
       }
     } catch (e) {

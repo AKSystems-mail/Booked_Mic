@@ -32,6 +32,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   final _guestHostCodeController = TextEditingController();
 
   final TextEditingController _addressController = TextEditingController();
+  final FocusNode _addressFocusNode = FocusNode();
   String? _selectedAddressDescription;
   String? _selectedStateAbbr;
   double? _selectedLat;
@@ -49,6 +50,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   void dispose() {
     _listNameController.dispose();
     _addressController.dispose();
+    _addressFocusNode.dispose();
     _spotsController.dispose();
     _waitlistController.dispose();
     _bucketController.dispose();
@@ -204,12 +206,13 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
           child: ListView(
              padding: const EdgeInsets.all(16.0),
              children: [
-                FadeInDown(duration: const Duration(milliseconds: 500), child: TextFormField(controller: _listNameController, style: TextStyle(color: Colors.black87), decoration: InputDecoration(labelText: 'List Name', labelStyle: TextStyle(color: labelColor), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade400)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2.0))), validator: (v)=>(v==null||v.trim().isEmpty)?'Enter name':null)),
+                FadeInDown(duration: const Duration(milliseconds: 500), child: TextFormField(controller: _listNameController, style: TextStyle(color: Colors.black87), textCapitalization: TextCapitalization.sentences, textInputAction: TextInputAction.next, decoration: InputDecoration(labelText: 'List Name', labelStyle: TextStyle(color: labelColor), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade400)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2.0))), validator: (v)=>(v==null||v.trim().isEmpty)?'Enter name':null, onFieldSubmitted: (_) => _addressFocusNode.requestFocus())),
                 const SizedBox(height: 16),
                 FadeInDown(
                    duration: const Duration(milliseconds: 600),
                    child: GooglePlaceAutoCompleteTextField(
                       textEditingController: _addressController,
+                      focusNode: _addressFocusNode,
                       googleAPIKey: googleApiKey,
                       inputDecoration: InputDecoration(
                          labelText: "Address / Venue", labelStyle: TextStyle(color: labelColor),
@@ -228,6 +231,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                             _selectedLng = double.tryParse(prediction.lng ?? '');
                             _selectedStateAbbr = _extractStateAbbr(prediction);
                          });
+                         _addressFocusNode.requestFocus();
                          if (_selectedStateAbbr == null && mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not automatically determine state.'), backgroundColor: Colors.orange));
                          }
