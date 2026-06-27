@@ -29,7 +29,10 @@ function countActiveAhead(spots: { [key: string]: any }, targetKey: string): num
     : parseInt(targetKey);
   let count = 0;
   for (const [key, value] of Object.entries(spots)) {
-    if (typeof value !== 'object' || value === null || !value.userId) continue;
+    // Must have a non-empty name (matches Flutter-side counting logic)
+    if (typeof value !== 'object' || value === null) continue;
+    const name = value.name;
+    if (typeof name !== 'string' || name.trim().length === 0) continue;
     const thisNum = key.startsWith('W')
       ? parseInt(key.substring(1)) + 100000
       : parseInt(key);
@@ -144,37 +147,38 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
     }
 
     if (removedSpotNumber === null) {
-      // --- isOver detection: spot was marked 'done' ---
+      // --- NOT isOver removal path (no main list spot was deleted, so either
+      //     an isOver transition or a reorder) ---
+
+      // Terminology used throughout:
+      //   Spot Key   — Firestore string key ("1", "2", "W1"), NOT a 0‑based index
+      //   Ahead Count — Number of ACTIVE (non‑isOver) performers with a lower
+      //                 Spot Key than yours. INCLUDES the person on stage.
+      //                 Spot 1 → Ahead Count 0 (On Stage)
+      //                 Spot 2 → Ahead Count 1 (Up Next)
+      //                 Spot N → Ahead Count N‑1
+      //   Advance    — Your Ahead Count decreases because someone ahead was
+      //                Marked Over
+      //   Mark Over  — Setting isOver=true on a performer's spot
+      //   Position Notification — Local/FCM telling a performer they Advanced
+
+      // --- Detect isOver transition: active performer → Marked Over ---
+      // NOTE: We do NOT send an FCM to the performer being Marked Over.
+      // The performer on stage (Ahead Count 0) doesn't need a "Your set is
+      // over!" message — they're performing, they already know.
+      // We DO notify remaining performers whose position improved (below).
       for (const [key, newValue] of Object.entries(afterSpots)) {
-        if (typeof newValue === 'object' && newValue !== null && 'userId' in newValue && newValue.userId) {
+        // Must have either userId (for FCM notification) or isOver=True (for a
+        // spot that was marked over but lacks userId — e.g. host-code signups).
+        if (typeof newValue === 'object' && newValue !== null && (newValue.isOver === true || ('userId' in newValue && newValue.userId))) {
           if (newValue.isOver === true) {
             const oldValue = beforeSpots[key];
             const wasOver = typeof oldValue === 'object' && oldValue !== null && oldValue.isOver === true;
             if (!wasOver) {
-              // Transition: active -> isOver — notify performer
-              const listName: string = afterData.listName ?? 'Unnamed List';
-              const userId: string = newValue.userId;
-              try {
-                const userDoc = await admin.firestore().collection("users").doc(userId).get();
-                const fcmTokens = userDoc.data()?.fcmTokens as string[] | undefined;
-                if (fcmTokens && fcmTokens.length > 0) {
-                  await admin.messaging().sendEachForMulticast({
-                    data: {
-                      type: "spot_update",
-                      title: `Set Over: ${listName}`,
-                      body: `Your set at ${listName} is over!`,
-                      listId: listId,
-                      spot: key,
-                    },
-                    tokens: fcmTokens,
-                  });
-                  logger.info(`[${listId}] Notified user ${userId} about isOver at spot ${key}`);
-                }
-              } catch (notifError) {
-                logger.error(`[${listId}] Error notifying user ${userId} about isOver:`, notifError);
-              }
+              // isOver transition confirmed — no FCM to the over performer.
+              // Fall through to notify remaining performers.
 
-              // --- Notify remaining performers whose position improved ---
+              // --- Notify remaining performers whose Ahead Count decreased ---
               for (const [otherKey, otherValue] of Object.entries(afterSpots)) {
                 if (otherKey === key) continue;
                 if (typeof otherValue !== 'object' || otherValue === null || !otherValue.userId) continue;
@@ -185,14 +189,19 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
 
                 if (newAhead < oldAhead) {
                   const otherUserId: string = otherValue.userId;
+                  // Stage (ahead 0) gets no notification — performer is live.
+                  // Ahead 1+ gets FCM push (Flutter local notification may not
+                  // fire when the app is backgrounded / listener suspended).
+                  if (newAhead <= 0) {
+                    const stageLabel = newAhead === 0 ? 'stage' : 'up_next';
+                    logger.info(`[${listId}] Performer ${otherUserId} (${otherKey}) reached ${stageLabel} — no FCM needed`);
+                    continue;
+                  }
                   try {
                     const otherUserDoc = await admin.firestore().collection("users").doc(otherUserId).get();
                     const otherTokens = otherUserDoc.data()?.fcmTokens as string[] | undefined;
                     if (otherTokens && otherTokens.length > 0) {
-                      const newSpotNum = newAhead + 1;
-                      const body = newSpotNum === 1
-                        ? "You're up next!"
-                        : `Moved to spot #${newSpotNum} • ${newAhead} ahead`;
+                      const body = `${newAhead} ahead of you.`;
                       await admin.messaging().sendEachForMulticast({
                         data: {
                           type: "spot_update",
@@ -215,7 +224,10 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
         }
       }
 
-      // Reorder detection: performers whose position changed without key removal
+      // --- Reorder detection: a performer's Spot Key changed without removal ---
+      // When someone reorders themselves, the Ahead Count for all intervening
+      // performers changes. We send a Position Notification to everyone affected
+      // so they know their new spot.
       const reorderNotifications: Array<{ userId: string; newKey: string }> = [];
       for (const [newKey, newValue] of Object.entries(afterSpots)) {
         if (typeof newValue === 'object' && newValue !== null && 'userId' in newValue) {
@@ -232,7 +244,15 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
             const userDoc = await admin.firestore().collection("users").doc(userId).get();
             const fcmTokens = userDoc.data()?.fcmTokens as string[] | undefined;
             if (fcmTokens && fcmTokens.length > 0) {
-              const body = newKey === "1" ? "You're up next!" : `Moved to spot #${newKey} • ${parseInt(newKey) - 1} ahead`;
+              // Stage (spot 1) gets no notification — performer is live.
+              // Up next (spot 2) handled by Flutter local notification.
+              // Skip FCM for both to avoid unwanted popups.
+              if (newKey === "1" || newKey === "2") {
+                const stageLabel = newKey === "1" ? 'stage' : 'up_next';
+                logger.info(`[${listId}] Reorder moved ${userId} to ${stageLabel} — no FCM needed`);
+                continue;
+              }
+              const body = `Moved to spot #${newKey}`;
               await admin.messaging().sendEachForMulticast({
                 data: {
                   type: "spot_update",
@@ -330,7 +350,10 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
         logger.info(`[${listId}] Applying ${Object.keys(updates).length} updates.`);
         await afterSnap.ref.update(updates);
 
-        // --- Notify Performers of Shifts ---
+        // --- Notify Performers of Shifts: send FCM for every spot reassigned ---
+        // These are Advanced performers whose Spot Key changed via waitlist
+        // promotion or reorder — they get a Position Notification with their
+        // new spot and Ahead Count.
         for (const [key, value] of Object.entries(updates)) {
           // If the update affected a spot
           if (key.startsWith("spots.") && key !== "spots." && typeof value === 'object' && value !== null && 'userId' in value) {
@@ -342,12 +365,15 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
             const fcmTokens = userDoc.data()?.fcmTokens as string[] | undefined;
             
             if (fcmTokens && fcmTokens.length > 0) {
-              let body = "Your spot has updated.";
-              if (spotKey === "1") {
-                body = "You're up next!";
-              } else {
-                body = `Moved to spot #${spotKey} • ${parseInt(spotKey) - 1} ahead`;
+              // Stage (spot 1) gets no notification — performer is live.
+              // Up next (spot 2) handled by Flutter local notification.
+              // Skip FCM for both to avoid unwanted popups.
+              if (spotKey === "1" || spotKey === "2") {
+                const stageLabel = spotKey === "1" ? 'stage' : 'up_next';
+                logger.info(`[${listId}] Shift moved ${userId} to ${stageLabel} — no FCM needed`);
+                continue;
               }
+              const body = `Moved to spot #${spotKey} • ${parseInt(spotKey) - 1} ahead of you.`;
               
               await admin.messaging().sendEachForMulticast({
                 data: {

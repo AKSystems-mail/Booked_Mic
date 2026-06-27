@@ -1,2 +1,0 @@
-/home/hermes_agent/Booked_Mic/android/app/.cxx/Debug/5z2n4a2h/armeabi-v7a/CMakeFiles/edit_cache.dir
-/home/hermes_agent/Booked_Mic/android/app/.cxx/Debug/5z2n4a2h/armeabi-v7a/CMakeFiles/rebuild_cache.dir

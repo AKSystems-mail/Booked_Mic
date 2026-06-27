@@ -57,6 +57,11 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 /// Uses flutterLocalNotificationsPlugin because it works in the background isolate.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Must initialize flutterLocalNotificationsPlugin in this background isolate
+  const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+  final InitializationSettings initSettings = InitializationSettings(android: androidSettings);
+  await flutterLocalNotificationsPlugin.initialize(initSettings);
+
   final data = message.data;
   if (data['type'] == 'spot_update') {
     final title = data['title'] ?? 'Booked Mic Update';
