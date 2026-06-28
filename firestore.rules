@@ -66,6 +66,20 @@ service cloud.firestore {
       allow read: if isAuthenticated();
     }
     
+    // --- Client Logs (diagnostics) ---
+    match /client_logs/{logId} {
+      allow create: if isAuthenticated();
+      allow read, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // --- Diagnostics (pinned per-user, per-list snapshots) ---
+    match /diagnostics/{uid}/snapshots/{listId} {
+      allow read, list: if isAdmin();
+      allow write: if isAuthenticated() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
     // --- Users Collection ---
     match /users/{userId} {
       allow get: if isAuthenticated();

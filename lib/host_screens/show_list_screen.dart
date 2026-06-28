@@ -3,6 +3,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../widgets/booked_mic_loading.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:random_text_reveal/random_text_reveal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -302,6 +304,11 @@ Future<void> _showTimerSettingsDialog() async {
   if (dialogThresholdSeconds <= 0) {
     dialogThresholdSeconds = 30;
   }
+  // Cap threshold to current set length on dialog open
+  final int maxOnOpen = dialogMinutes * 60;
+  if (dialogThresholdSeconds > maxOnOpen) {
+    dialogThresholdSeconds = maxOnOpen;
+  }
 
   final bool? saved = await showDialog<bool>(
     context: context,
@@ -330,11 +337,15 @@ Future<void> _showTimerSettingsDialog() async {
                   onChanged: (double value) {
                     setDialogState(() {
                       dialogMinutes = value.round();
+                      final int maxThreshold = dialogMinutes * 60;
+                      if (dialogThresholdSeconds > maxThreshold) {
+                        dialogThresholdSeconds = maxThreshold;
+                      }
                     });
                   },
                 ),
                 const SizedBox(height: 24),
-                const Text('Warning Threshold / Getting the light at...', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Getting the light at...', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Text(
                   dialogThresholdSeconds >= 60
@@ -345,8 +356,8 @@ Future<void> _showTimerSettingsDialog() async {
                 Slider(
                   value: dialogThresholdSeconds.toDouble(),
                   min: 5,
-                  max: 900,
-                  divisions: 179,
+                  max: (dialogMinutes * 60).toDouble(),
+                  divisions: dialogMinutes * 12 - 1,
                   label: dialogThresholdSeconds >= 60
                       ? '${dialogThresholdSeconds ~/ 60} min ${dialogThresholdSeconds % 60} s'
                       : '${dialogThresholdSeconds}s',
@@ -356,7 +367,8 @@ Future<void> _showTimerSettingsDialog() async {
                     setDialogState(() {
                       dialogThresholdSeconds = (value / 5).round() * 5;
                       if (dialogThresholdSeconds < 5) dialogThresholdSeconds = 5;
-                      if (dialogThresholdSeconds > 900) dialogThresholdSeconds = 900;
+                      final int maxThreshold = dialogMinutes * 60;
+                      if (dialogThresholdSeconds > maxThreshold) dialogThresholdSeconds = maxThreshold;
                     });
                   },
                 ),
@@ -836,10 +848,7 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
           }
         },
       );
-      trailingWidget = SizedBox(
-        width: 24, height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.secondary),
-      );
+      trailingWidget = const BookedMicLoading(compact: true);
     } else if (item.category == SpotCategory.bucket && item.isEmpty && !isCurrentlyDrawing) {
       titleText = '(Tap to Draw from Bucket)';
       titleColor = Colors.teal.shade300;
@@ -996,7 +1005,7 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
             if (_isLoading)
               const Padding(
                 padding: EdgeInsets.only(right: 16.0),
-                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3.0))),
+                child: Center(child: BookedMicLoading(compact: true, compactSize: 20)),
               )
           ],
           bottom: TimerControlBar(
@@ -1008,7 +1017,7 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
           stream: FirebaseFirestore.instance.collection('Lists').doc(widget.listId).snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
-               return const Center(child: CircularProgressIndicator());
+               return const BookedMicLoading();
             }
             if (snapshot.hasError) {
               return Center(child: Text('Error loading list data: ${snapshot.error}'));

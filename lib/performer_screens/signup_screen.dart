@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:animate_do/animate_do.dart';
 
+import '../widgets/booked_mic_loading.dart';
+
 class SignupScreen extends StatefulWidget {
   final String listId;
 
@@ -94,7 +96,8 @@ class _SignupScreenState extends State<SignupScreen> {
          Map<String, dynamic> listData = snapshot.data() as Map<String, dynamic>;
          Map<String, dynamic> spots = Map<String, dynamic>.from(listData['spots'] ?? {});
          
-         if (spots.containsKey(_selectedSpotKey!)) throw Exception("Spot not available");
+          final existingSpot = spots[_selectedSpotKey!];
+          if (existingSpot is Map && existingSpot.isNotEmpty) throw Exception("Spot not available");
          
          spots[_selectedSpotKey!] = {
            'name': _performerStageName!,
@@ -216,11 +219,11 @@ class _SignupScreenState extends State<SignupScreen> {
         width: double.infinity, height: double.infinity,
         decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Colors.blue.shade200, Colors.purple.shade100])),
         child: _isLoadingPerformer
-            ? Center(child: CircularProgressIndicator(color: primaryColor))
+            ? const Center(child: BookedMicLoading())
             : StreamBuilder<DocumentSnapshot>(
                 stream: _firestore.collection('Lists').doc(widget.listId).snapshots(),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) return Center(child: CircularProgressIndicator(color: primaryColor));
+                  if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) return const BookedMicLoading();
                   if (snapshot.hasError) return Center(child: Text('Error loading list: ${snapshot.error}', style: TextStyle(color: Colors.red.shade900)));
                   if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: Text('List not found.', style: TextStyle(color: Colors.black54)));
 
@@ -261,14 +264,18 @@ class _SignupScreenState extends State<SignupScreen> {
       final spotData = spotsMap[spotKey];
       bool isAvailable = spotData == null;
       bool isTakenByMe = false;
+      bool isOver = false;
       String titleText = 'Available';
       Color titleColor = Colors.green.shade700;
-      
-      if (spotData is Map) {
+      TextDecoration textDecoration = TextDecoration.none;
+
+      if (spotData is Map && spotData.isNotEmpty) {
          isAvailable = false;
          isTakenByMe = spotData['userId'] == _performerId;
+         isOver = spotData['isOver'] == true;
          titleText = isTakenByMe ? (spotData['name'] ?? 'You') : 'Taken';
-         titleColor = isTakenByMe ? Colors.blue.shade800 : Colors.grey.shade600;
+         titleColor = isOver ? Colors.grey.shade400 : (isTakenByMe ? Colors.blue.shade800 : Colors.grey.shade600);
+         textDecoration = isOver ? TextDecoration.lineThrough : TextDecoration.none;
       }
 
       bool isSelectedByMe = _selectedSpotKey == spotKey;
@@ -279,7 +286,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
       String spotLabel = type == SpotType.regular ? "${displayIndex + 1}." : "W${displayIndex + 1}.";
 
-      Widget trailingWidget = isTakenByMe 
+      Widget trailingWidget = isTakenByMe && !isOver
           ? IconButton(icon: Icon(Icons.remove_circle_outline, color: Colors.red.shade400), onPressed: () => _showRemoveConfirmationDialog(spotKey).then((val) { if (val == true) _removeSignup(spotKey); }))
           : (isSelectedByMe ? Row(mainAxisSize: MainAxisSize.min, children: [IconButton(icon: const Icon(Icons.check_circle, color: Colors.green), onPressed: _confirmSelection), IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: _cancelSelection)]) : const SizedBox(width: 40));
 
@@ -291,7 +298,7 @@ class _SignupScreenState extends State<SignupScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             child: ListTile(
                leading: Text(spotLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
-               title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: isTakenByMe || isSelectedByMe ? FontWeight.bold : FontWeight.normal)),
+               title: Text(titleText, style: TextStyle(color: titleColor, fontWeight: isTakenByMe || isSelectedByMe ? FontWeight.bold : FontWeight.normal, decoration: textDecoration)),
                trailing: trailingWidget,
                onTap: isAvailable ? () => _selectSpot(spotKey, true) : null,
             ),

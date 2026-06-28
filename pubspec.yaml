@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 6.7.2+6
+version: 7.0.0+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -42,20 +42,20 @@ dependencies:
   flutter_spinbox: ^0.13.1
   firebase_auth_web: ^5.8.12
   google_sign_in: ^6.3.0
-  sign_in_with_apple: ^6.1.1
   google_places_flutter: ^2.0.6
   intl: ^0.20.0
   numberpicker: ^2.1.2
   package_info_plus: ^8.3.0
   permission_handler: ^11.3.1 
   provider: ^6.1.2
-  mobile_scanner: ^6.0.4
+  simple_barcode_scanner: ^0.3.0
   torch_light: ^1.0.1
   qr_flutter: ^4.1.0
   shared_preferences: ^2.2.3
   uuid: ^4.3.3
   geocoding: ^3.0.0
   firebase_auth: ^5.5.1
+  firebase_messaging: ^15.2.10
   random_text_reveal: ^0.0.7
   url_launcher: ^6.3.2
   path_provider: ^2.1.5
@@ -85,7 +85,6 @@ flutter_launcher_icons:
   android: "ic_launcher"
   ios: true
   image_path: "assets/icon/icon-512.png"
-  image_path_ios: "assets/icon/icon-ios-512.png"
   web:
     generate: true
     image_path: "assets/icon/icon-512.png"

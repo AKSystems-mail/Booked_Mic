@@ -7,6 +7,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:intl/intl.dart';
+
+import '../widgets/booked_mic_loading.dart';
 import 'package:google_places_flutter/google_places_flutter.dart';
 import 'package:google_places_flutter/model/prediction.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -30,6 +32,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   final _guestHostCodeController = TextEditingController();
 
   final TextEditingController _addressController = TextEditingController();
+  final FocusNode _addressFocusNode = FocusNode();
   String? _selectedAddressDescription;
   String? _selectedStateAbbr;
   double? _selectedLat;
@@ -47,6 +50,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
   void dispose() {
     _listNameController.dispose();
     _addressController.dispose();
+    _addressFocusNode.dispose();
     _spotsController.dispose();
     _waitlistController.dispose();
     _bucketController.dispose();
@@ -202,12 +206,13 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
           child: ListView(
              padding: const EdgeInsets.all(16.0),
              children: [
-                FadeInDown(duration: const Duration(milliseconds: 500), child: TextFormField(controller: _listNameController, style: TextStyle(color: Colors.black87), decoration: InputDecoration(labelText: 'List Name', labelStyle: TextStyle(color: labelColor), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade400)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2.0))), validator: (v)=>(v==null||v.trim().isEmpty)?'Enter name':null)),
+                FadeInDown(duration: const Duration(milliseconds: 500), child: TextFormField(controller: _listNameController, style: TextStyle(color: Colors.black87), textCapitalization: TextCapitalization.sentences, textInputAction: TextInputAction.next, decoration: InputDecoration(labelText: 'List Name', labelStyle: TextStyle(color: labelColor), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade400)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2.0))), validator: (v)=>(v==null||v.trim().isEmpty)?'Enter name':null, onFieldSubmitted: (_) => _addressFocusNode.requestFocus())),
                 const SizedBox(height: 16),
                 FadeInDown(
                    duration: const Duration(milliseconds: 600),
                    child: GooglePlaceAutoCompleteTextField(
                       textEditingController: _addressController,
+                      focusNode: _addressFocusNode,
                       googleAPIKey: googleApiKey,
                       inputDecoration: InputDecoration(
                          labelText: "Address / Venue", labelStyle: TextStyle(color: labelColor),
@@ -226,6 +231,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                             _selectedLng = double.tryParse(prediction.lng ?? '');
                             _selectedStateAbbr = _extractStateAbbr(prediction);
                          });
+                         _addressFocusNode.requestFocus();
                          if (_selectedStateAbbr == null && mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not automatically determine state.'), backgroundColor: Colors.orange));
                          }
@@ -262,7 +268,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                       ),
                       Switch(
                         value: _isSearchable,
-                        activeThumbColor: Colors.deepPurple,
+                        thumbColor: WidgetStateProperty.resolveWith((states) => Colors.deepPurple),
                         onChanged: (val) => setState(() => _isSearchable = val),
                       ),
                     ],
@@ -317,7 +323,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
-                _isLoading ? Center(child: CircularProgressIndicator(color: buttonColor)) : ElasticIn(duration: const Duration(milliseconds: 800), delay: const Duration(milliseconds: 200), child: ElevatedButton(onPressed: _createList, style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: buttonColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0))), child: const Text('Create List', style: TextStyle(fontSize: 18, color: Colors.white)))),
+                _isLoading ? const BookedMicLoading(compact: true) : ElasticIn(duration: const Duration(milliseconds: 800), delay: const Duration(milliseconds: 200), child: ElevatedButton(onPressed: _createList, style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: buttonColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0))), child: const Text('Create List', style: TextStyle(fontSize: 18, color: Colors.white)))),
              ],
           ),
       );

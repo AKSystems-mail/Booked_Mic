@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 class WidgetService {
   static const String _groupId = 'group.bookedmic.app'; // For iOS App Groups
   static const String _androidWidgetName = 'BookedMicWidgetProvider';
+  static const String _nearbyMicsAndroidWidgetName = 'NearbyMicsWidgetProvider';
 
   /// Updates the 'Up Next' widget with the user's current position and list name.
   static Future<void> updateUpNextWidget({
@@ -39,7 +40,7 @@ class WidgetService {
       await HomeWidget.saveWidgetData<String>('nearby_city', city);
       
       await HomeWidget.updateWidget(
-        name: _androidWidgetName,
+        name: _nearbyMicsAndroidWidgetName,
         iOSName: 'NearbyMicsWidget',
       );
     } catch (e) {

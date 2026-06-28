@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // Import the screen to navigate to after successful login/signup
 import 'role_selection_screen.dart';
+import 'widgets/booked_mic_loading.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -402,7 +403,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
                     // Buttons
                     _isLoading
-                        ? const Center(child: CircularProgressIndicator())
+                        ? const Center(child: BookedMicLoading())
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
