@@ -15,6 +15,8 @@ class NotificationService {
   StreamSubscription<QuerySnapshot>? _listsSubscription;
   final ValueNotifier<Map<String, int?>> _lastNotifiedPositionNotifier =
       ValueNotifier({});
+
+  ValueNotifier<Map<String, int?>> get lastNotifiedPositionNotifier => _lastNotifiedPositionNotifier;
   
   // New: Notifier for the UI banner
   final ValueNotifier<String?> bannerMessageNotifier = ValueNotifier(null);

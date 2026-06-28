@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/foundation.dart';
@@ -59,6 +60,62 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _passwordController.dispose();
     _stageNameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleAppleSignIn() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final OAuthCredential authCredential = OAuthProvider("apple.com").credential(
+        idToken: credential.identityToken,
+        accessToken: credential.authorizationCode,
+      );
+
+      final UserCredential userCredential = await _auth.signInWithCredential(authCredential);
+      final User? user = userCredential.user;
+
+      if (user != null) {
+        // Check if user already has a profile in Firestore
+        final doc = await _firestore.collection('users').doc(user.uid).get();
+        if (!doc.exists) {
+          // New user, save profile with Apple full name if available
+          String stageName = 'New Performer';
+          if (credential.givenName != null || credential.familyName != null) {
+            stageName = '${credential.givenName ?? ''} ${credential.familyName ?? ''}'.trim();
+          }
+          await _firestore.collection('users').doc(user.uid).set({
+            'uid': user.uid,
+            'email': user.email,
+            'stageName': stageName,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+        _navigateToNextScreen();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Apple Sign-In failed. Please try again.';
+          _isLoading = false;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   void _navigateToNextScreen() {
@@ -376,6 +433,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                 ),
                                 onPressed: _signInWithGoogle,
                               ),
+                              if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS))
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: SignInWithAppleButton(
+                                    onPressed: _handleAppleSignIn,
+                                    height: 50,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
                               const SizedBox(height: 16),
                               // Toggle between Sign In and Sign Up mode
                               TextButton(

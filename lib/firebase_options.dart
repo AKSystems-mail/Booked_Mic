@@ -55,14 +55,14 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCZop-WCP8Ux9Mwb-MLSpRgGIW_avINd44',
-    appId: '1:1049808440381:ios:1d6365246c3f31a370ee54',
+    apiKey: 'AIzaSyDto7yW3gjK3UYD808J_jHIzJEF2Nz4B-g',
+    appId: '1:1049808440381:ios:674033ff46a7711870ee54',
     messagingSenderId: '1049808440381',
     projectId: 'bookedmic-1cf9d',
     storageBucket: 'bookedmic-1cf9d.firebasestorage.app',
     androidClientId: '1049808440381-fmogcudramlhoaoivphm7ffb6po7k8os.apps.googleusercontent.com',
-    iosClientId: '1049808440381-7gebkrrqo9v96chlqob7ukm3oj592fkf.apps.googleusercontent.com',
-    iosBundleId: 'com.bookedmic.myapp',
+    iosClientId: '1049808440381-vjth6t7401qt2jku23c5uag3ijpjhttr.apps.googleusercontent.com',
+    iosBundleId: 'com.kennedyai.bookedmic',
   );
 
 }

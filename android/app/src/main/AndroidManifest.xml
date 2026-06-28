@@ -10,7 +10,7 @@
     <application
         android:label="BookedMic"
         android:name="${applicationName}"
-        android:icon="@mipmap/bookedmic"
+        android:icon="@mipmap/ic_launcher"
         android:allowBackup="true">
         <activity
             android:name=".MainActivity"
