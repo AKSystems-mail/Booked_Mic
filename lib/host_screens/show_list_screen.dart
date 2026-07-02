@@ -698,51 +698,48 @@ void _onReorderRegularSpots(int oldIndex, int newIndex) {
 
 Future<void> _updateFirestoreAfterRegularReorder() async {
   try {
-    DocumentSnapshot listSnapshot = await FirebaseFirestore.instance
-        .collection('Lists')
-        .doc(widget.listId)
-        .get();
-    
-    if (!listSnapshot.exists) {
-      throw Exception("List not found for reorder.");
-    }
-    
-    Map<String, dynamic> existingData = listSnapshot.data() as Map<String, dynamic>;
-    Map<String, dynamic> existingSpots = Map<String, dynamic>.from(
-        existingData['spots'] as Map? ?? {});
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final listRef = FirebaseFirestore.instance.collection('Lists').doc(widget.listId);
+      final listSnapshot = await transaction.get(listRef);
 
-    Map<String, dynamic> newSpotsMap = {};
-    
-    existingSpots.forEach((key, value) {
-      if (key.startsWith('W') || key.startsWith('B')) {
-        newSpotsMap[key] = value;
+      if (!listSnapshot.exists) {
+        throw Exception("List not found for reorder.");
       }
-    });
 
-    for (int i = 0; i < _regularSpotItems.length; i++) {
-      final spotItem = _regularSpotItems[i];
-      String newRegularKey = (i + 1).toString();
+      Map<String, dynamic> existingData = listSnapshot.data() as Map<String, dynamic>;
+      Map<String, dynamic> existingSpots = Map<String, dynamic>.from(
+          existingData['spots'] as Map? ?? {});
 
-      if (!spotItem.isEmpty && spotItem.name != null && spotItem.name!.isNotEmpty) {
-        Map<String, dynamic> spotDataToSave = {
-          'name': spotItem.name,
-          'isOver': spotItem.isOver,
-        };
-        if (spotItem.userId != null) {
-          spotDataToSave['userId'] = spotItem.userId;
+      Map<String, dynamic> newSpotsMap = {};
+
+      existingSpots.forEach((key, value) {
+        if (key.startsWith('W') || key.startsWith('B')) {
+          newSpotsMap[key] = value;
         }
-        newSpotsMap[newRegularKey] = spotDataToSave;
-      } else {
-        newSpotsMap[newRegularKey] = {};
-      }
-    }
+      });
 
-    await FirebaseFirestore.instance
-        .collection('Lists')
-        .doc(widget.listId)
-        .update({
-      'spots': newSpotsMap,
-      'updatedAt': FieldValue.serverTimestamp(),
+      for (int i = 0; i < _regularSpotItems.length; i++) {
+        final spotItem = _regularSpotItems[i];
+        String newRegularKey = (i + 1).toString();
+
+        if (!spotItem.isEmpty && spotItem.name != null && spotItem.name!.isNotEmpty) {
+          Map<String, dynamic> spotDataToSave = {
+            'name': spotItem.name,
+            'isOver': spotItem.isOver,
+          };
+          if (spotItem.userId != null) {
+            spotDataToSave['userId'] = spotItem.userId;
+          }
+          newSpotsMap[newRegularKey] = spotDataToSave;
+        } else {
+          newSpotsMap[newRegularKey] = {};
+        }
+      }
+
+      transaction.update(listRef, {
+        'spots': newSpotsMap,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
 
     debugPrint("Regular spots reordered successfully in Firestore.");

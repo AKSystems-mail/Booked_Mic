@@ -345,7 +345,6 @@ class NotificationService {
           'currentPositionIndex': currentPositionIndex,
           'totalActive': totalActivePerformers,
         });
-    String title = 'Spot Update: $listName';
     String body = '';
     bool isOnStage = false;
     bool isUpNext = false;
@@ -366,29 +365,9 @@ class NotificationService {
     bannerMessageNotifier.value = body;
     isUpNextNotifier.value = isUpNext || isOnStage;
 
-    try {
-      // Local notification for spot #2 only ("You're up next!").
-      // Spot #1 (on stage) gets no notification — performer is already live.
-      // All other positions handled by FCM system push.
-      if (!kIsWeb && currentPositionIndex == 1) {
-        await AwesomeNotifications().createNotification(
-          content: NotificationContent(
-            id: listId.hashCode + currentPositionIndex + DateTime.now().millisecondsSinceEpoch,
-            channelKey: 'spot_updates_channel',
-            title: title,
-            body: body,
-            payload: {'listId': listId, 'spot': (currentPositionIndex + 1).toString()},
-            notificationLayout: NotificationLayout.Default,
-            locked: isUpNext,
-            autoDismissible: !isUpNext,
-          ),
-        );
-
-        // Physical vibration on move forward
-        HapticFeedback.heavyImpact();
-      }
-    } catch (e) {
-      // Log errors
+    // Haptic feedback for up next
+    if (!kIsWeb && currentPositionIndex == 1) {
+      HapticFeedback.heavyImpact();
     }
   }
 }

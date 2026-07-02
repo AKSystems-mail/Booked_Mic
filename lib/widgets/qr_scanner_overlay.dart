@@ -1,5 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_code_scanner/qr_code_scanner.dart';
 
 class QrScannerOverlay extends StatefulWidget {
   const QrScannerOverlay({super.key});
@@ -9,12 +11,27 @@ class QrScannerOverlay extends StatefulWidget {
 }
 
 class _QrScannerOverlayState extends State<QrScannerOverlay> {
-  final MobileScannerController controller = MobileScannerController();
+  final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
+  QRViewController? controller;
+  StreamSubscription<Barcode>? _subscription;
+  bool _flashOn = false;
 
   @override
   void dispose() {
-    controller.dispose();
+    _subscription?.cancel();
+    controller?.pauseCamera();
+    controller?.dispose();
     super.dispose();
+  }
+
+  void _onQRViewCreated(QRViewController c) {
+    controller = c;
+    c.resumeCamera();
+    _subscription = c.scannedDataStream.listen((scanData) {
+      if (scanData.code != null && mounted) {
+        Navigator.pop(context, scanData.code);
+      }
+    });
   }
 
   @override
@@ -27,61 +44,30 @@ class _QrScannerOverlayState extends State<QrScannerOverlay> {
         actions: [
           IconButton(
             color: Colors.white,
-            icon: ValueListenableBuilder(
-              valueListenable: controller,
-              builder: (context, state, child) {
-                final torchState = state.torchState;
-                switch (torchState) {
-                  case TorchState.off:
-                    return const Icon(Icons.flash_off, color: Colors.grey);
-                  case TorchState.on:
-                    return const Icon(Icons.flash_on, color: Colors.yellow);
-                  default:
-                    return const Icon(Icons.flash_off, color: Colors.grey);
-                }
-              },
+            icon: Icon(
+              _flashOn ? Icons.flash_on : Icons.flash_off,
+              color: _flashOn ? Colors.yellow : Colors.grey,
             ),
             iconSize: 32.0,
-            onPressed: () => controller.toggleTorch(),
+            onPressed: () {
+              controller?.toggleFlash();
+              setState(() => _flashOn = !_flashOn);
+            },
           ),
           IconButton(
             color: Colors.white,
-            icon: ValueListenableBuilder(
-              valueListenable: controller,
-              builder: (context, state, child) {
-                final facing = state.cameraDirection;
-                switch (facing) {
-                  case CameraFacing.front:
-                    return const Icon(Icons.camera_front);
-                  case CameraFacing.back:
-                  default:
-                    return const Icon(Icons.camera_rear);
-                }
-              },
-            ),
+            icon: const Icon(Icons.camera_rear),
             iconSize: 32.0,
-            onPressed: () => controller.switchCamera(),
+            onPressed: () => controller?.flipCamera(),
           ),
         ],
       ),
       body: Stack(
         children: [
-          MobileScanner(
-            controller: controller,
-            onDetect: (capture) {
-              final List<Barcode> barcodes = capture.barcodes;
-              for (final barcode in barcodes) {
-                if (barcode.rawValue != null) {
-                  final String code = barcode.rawValue!;
-                  if (code.length >= 20) {
-                    Navigator.pop(context, code);
-                    return;
-                  }
-                }
-              }
-            },
+          QRView(
+            key: qrKey,
+            onQRViewCreated: _onQRViewCreated,
           ),
-          // Custom Overlay
           Center(
             child: Container(
               width: 250,
@@ -99,7 +85,11 @@ class _QrScannerOverlayState extends State<QrScannerOverlay> {
             child: Center(
               child: Text(
                 'Center the QR code in the box',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, backgroundColor: Colors.black45),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  backgroundColor: Colors.black45,
+                ),
               ),
             ),
           ),

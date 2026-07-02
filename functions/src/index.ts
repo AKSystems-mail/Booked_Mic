@@ -201,7 +201,7 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                     const otherUserDoc = await admin.firestore().collection("users").doc(otherUserId).get();
                     const otherTokens = otherUserDoc.data()?.fcmTokens as string[] | undefined;
                     if (otherTokens && otherTokens.length > 0) {
-                      const body = `${newAhead} ahead of you.`;
+                      const body = newAhead === 1 ? "You're up next!" : `${newAhead} ahead of you.`;
                       await admin.messaging().sendEachForMulticast({
                         data: {
                           type: "spot_update",
@@ -211,6 +211,14 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                           spot: otherKey,
                         },
                         tokens: otherTokens,
+                        apns: {
+                          payload: {
+                            aps: {
+                              'content-available': 1,
+                              sound: 'default',
+                            },
+                          },
+                        },
                       });
                       logger.info(`[${listId}] Notified remaining performer ${otherUserId} (${otherKey}) — position improved ${oldAhead}→${newAhead}`);
                     }
@@ -262,6 +270,14 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                   spot: newKey,
                 },
                 tokens: fcmTokens,
+                apns: {
+                  payload: {
+                    aps: {
+                      'content-available': 1,
+                      sound: 'default',
+                    },
+                  },
+                },
               });
               logger.info(`[${listId}] Notified user ${userId} about reorder to ${newKey}`);
             }
@@ -384,6 +400,14 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                   spot: spotKey,
                 },
                 tokens: fcmTokens,
+                apns: {
+                  payload: {
+                    aps: {
+                      'content-available': 1,
+                      sound: 'default',
+                    },
+                  },
+                },
               });
               logger.info(`[${listId}] Notified user ${userId} about shift to ${spotKey}`);
             }

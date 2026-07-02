@@ -30,9 +30,30 @@ class FcmService {
       return;
     }
 
-    final token = await messaging.getToken();
+    // On iOS, explicitly trigger APNs registration.  If permission was already
+    // granted in a previous launch, requestPermission() does NOT call
+    // registerForRemoteNotifications() again — this call forces it.
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      await messaging.getAPNSToken();
+    }
+
+    // Retry getToken() — on iOS, the APNs token may not be available
+    // immediately after registration, and getToken() throws if it's null.
+    String? token;
+    for (int i = 0; i < 10; i++) {
+      try {
+        token = await messaging.getToken();
+        if (token != null) break;
+      } catch (e) {
+        debugPrint('[FCM] getToken attempt $i failed: $e');
+      }
+      if (i < 9) await Future.delayed(const Duration(seconds: 2));
+    }
+
     if (token != null) {
       await _storeToken(userId, token);
+    } else {
+      debugPrint('[FCM] Could not obtain FCM token after 10 attempts');
     }
 
     _tokenSubscription = messaging.onTokenRefresh.listen((newToken) {
@@ -45,7 +66,7 @@ class FcmService {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
-          .update({'fcmTokens': FieldValue.arrayUnion([token])});
+          .set({'fcmTokens': FieldValue.arrayUnion([token])}, SetOptions(merge: true));
       debugPrint('[FCM] Token stored for user $userId');
     } catch (e) {
       debugPrint('[FCM] Error storing token: $e');

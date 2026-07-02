@@ -59,7 +59,8 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Must initialize flutterLocalNotificationsPlugin in this background isolate
   const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-  final InitializationSettings initSettings = InitializationSettings(android: androidSettings);
+  const DarwinInitializationSettings iosSettings = DarwinInitializationSettings();
+  final InitializationSettings initSettings = InitializationSettings(android: androidSettings, iOS: iosSettings);
   await flutterLocalNotificationsPlugin.initialize(initSettings);
 
   final data = message.data;
@@ -80,9 +81,45 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           importance: Importance.high,
           priority: Priority.high,
         ),
+        iOS: DarwinNotificationDetails(presentSound: true),
       ),
       payload: listId,
     );
+  }
+}
+
+/// Handles FCM data messages while the app is in the foreground.
+void _handleForegroundFcmMessage(RemoteMessage message) {
+  final data = message.data;
+  if (data['type'] == 'spot_update') {
+    final title = data['title'] ?? 'Booked Mic Update';
+    final body = data['body'] ?? 'Your spot has updated.';
+    final listId = data['listId'] ?? '';
+    flutterLocalNotificationsPlugin.show(
+      listId.hashCode + data.hashCode,
+      title,
+      body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'spot_updates_channel',
+          'Spot Updates',
+          channelDescription: 'Notifications for queue position updates',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(presentSound: true),
+      ),
+      payload: listId,
+    );
+  }
+}
+
+/// Handles when user taps a notification from terminated/background state.
+void _handleNotificationTap(RemoteMessage message) {
+  final data = message.data;
+  if (data['type'] == 'spot_update') {
+    final listId = data['listId'] ?? '';
+    debugPrint('[notif_tap] User tapped spot_update notification for list: $listId');
   }
 }
 
@@ -92,6 +129,8 @@ Future<void> main() async {
   // Register background FCM handler BEFORE Firebase init (required by FCM docs)
   if (!kIsWeb) {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    FirebaseMessaging.onMessage.listen(_handleForegroundFcmMessage);
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
   }
 
   await Firebase.initializeApp(
@@ -382,10 +421,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
       debugPrint("[AuthWrapper] Running background setup for UID: $uid");
       UserService().ensureHostCode().then((code) {
         debugPrint("[AuthWrapper] Setup complete. Code: $code");
+      }).catchError((e) {
+        debugPrint("[AuthWrapper] ensureHostCode error: $e");
       });
       UserService().cacheStageName();
       NotificationService().startListening(uid);
-      FcmService().init(uid);
+      FcmService().init(uid).catchError((e) {
+        debugPrint("[AuthWrapper] FcmService.init error: $e");
+      });
     }
 
     Future<void> _saveLastKnownUid(String uid) async {
