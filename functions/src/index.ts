@@ -202,7 +202,11 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                     const otherTokens = otherUserDoc.data()?.fcmTokens as string[] | undefined;
                     if (otherTokens && otherTokens.length > 0) {
                       const body = newAhead === 1 ? "You're up next!" : `${newAhead} ahead of you.`;
-                      await admin.messaging().sendEachForMulticast({
+                      const positionResult = await admin.messaging().sendEachForMulticast({
+                        notification: {
+                          title: "Booked Mic Update",
+                          body: body,
+                        },
                         data: {
                           type: "spot_update",
                           title: "Booked Mic Update",
@@ -211,16 +215,11 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                           spot: otherKey,
                         },
                         tokens: otherTokens,
-                        apns: {
-                          payload: {
-                            aps: {
-                              'content-available': 1,
-                              sound: 'default',
-                            },
-                          },
-                        },
                       });
-                      logger.info(`[${listId}] Notified remaining performer ${otherUserId} (${otherKey}) — position improved ${oldAhead}→${newAhead}`);
+                      if (positionResult.failureCount > 0) {
+                        logger.error(`[${listId}] Position FCM failures: ${positionResult.failureCount}/${positionResult.successCount + positionResult.failureCount} — first error: ${positionResult.responses.find(r => r.error)?.error?.message}`);
+                      }
+                      logger.info(`[${listId}] Notified remaining performer ${otherUserId} (${otherKey}) — position improved ${oldAhead}→${newAhead} (FCM: ${positionResult.successCount} ok, ${positionResult.failureCount} fail)`);
                     }
                   } catch (otherNotifError) {
                     logger.error(`[${listId}] Error notifying remaining performer ${otherUserId}:`, otherNotifError);
@@ -261,7 +260,11 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                 continue;
               }
               const body = `Moved to spot #${newKey}`;
-              await admin.messaging().sendEachForMulticast({
+              const reorderResult = await admin.messaging().sendEachForMulticast({
+                notification: {
+                  title: "Booked Mic Update",
+                  body: body,
+                },
                 data: {
                   type: "spot_update",
                   title: "Booked Mic Update",
@@ -270,16 +273,11 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                   spot: newKey,
                 },
                 tokens: fcmTokens,
-                apns: {
-                  payload: {
-                    aps: {
-                      'content-available': 1,
-                      sound: 'default',
-                    },
-                  },
-                },
               });
-              logger.info(`[${listId}] Notified user ${userId} about reorder to ${newKey}`);
+              if (reorderResult.failureCount > 0) {
+                logger.error(`[${listId}] Reorder FCM failures: ${reorderResult.failureCount}/${reorderResult.successCount + reorderResult.failureCount} — first error: ${reorderResult.responses.find(r => r.error)?.error?.message}`);
+              }
+              logger.info(`[${listId}] Notified user ${userId} about reorder to ${newKey} (FCM: ${reorderResult.successCount} ok, ${reorderResult.failureCount} fail)`);
             }
           } catch (notifError) {
             logger.error(`[${listId}] Error notifying user ${userId}:`, notifError);
@@ -391,7 +389,11 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
               }
               const body = `Moved to spot #${spotKey} • ${parseInt(spotKey) - 1} ahead of you.`;
               
-              await admin.messaging().sendEachForMulticast({
+              const shiftResult = await admin.messaging().sendEachForMulticast({
+                notification: {
+                  title: "Booked Mic Update",
+                  body: body,
+                },
                 data: {
                   type: "spot_update",
                   title: "Booked Mic Update",
@@ -400,16 +402,11 @@ export const onListUpdateShiftSpots = onDocumentUpdated(
                   spot: spotKey,
                 },
                 tokens: fcmTokens,
-                apns: {
-                  payload: {
-                    aps: {
-                      'content-available': 1,
-                      sound: 'default',
-                    },
-                  },
-                },
               });
-              logger.info(`[${listId}] Notified user ${userId} about shift to ${spotKey}`);
+              if (shiftResult.failureCount > 0) {
+                logger.error(`[${listId}] Shift FCM failures: ${shiftResult.failureCount}/${shiftResult.successCount + shiftResult.failureCount} — first error: ${shiftResult.responses.find(r => r.error)?.error?.message}`);
+              }
+              logger.info(`[${listId}] Notified user ${userId} about shift to ${spotKey} (FCM: ${shiftResult.successCount} ok, ${shiftResult.failureCount} fail)`);
             }
           }
         }
