@@ -10,6 +10,17 @@ import * as admin from "firebase-admin";
 admin.initializeApp();
 const { FieldValue } = admin.firestore; // Keep FieldValue
 
+const FCM_ENDPOINT = `https://fcm.googleapis.com/v1/projects/bookedmic-1cf9d/messages:send`;
+
+async function getFcmToken(): Promise<string> {
+  const res = await fetch(
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token?scopes=https://www.googleapis.com/auth/firebase.messaging',
+    { headers: { 'Metadata-Flavor': 'Google' } },
+  );
+  const body: any = await res.json();
+  return body.access_token;
+}
+
 async function sendFcm(
   tokens: string[],
   notification: { title: string; body: string },
@@ -17,16 +28,24 @@ async function sendFcm(
   listId: string,
   label: string,
 ): Promise<{ successCount: number; failureCount: number }> {
-  const results = await Promise.allSettled(
-    tokens.map(token =>
-      admin.messaging().send({ token, notification, data })
-    )
-  );
+  const accessToken = await getFcmToken();
   let successCount = 0;
   const errors: string[] = [];
-  for (const r of results) {
-    if (r.status === 'fulfilled') successCount++;
-    else errors.push(r.reason?.message ?? 'Unknown error');
+  for (const token of tokens) {
+    try {
+      const res = await fetch(FCM_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: { token, notification, data } }),
+      });
+      if (res.ok) successCount++;
+      else errors.push(`HTTP ${res.status}: ${await res.text()}`);
+    } catch (err: any) {
+      errors.push(err?.message ?? 'Unknown error');
+    }
   }
   const failureCount = tokens.length - successCount;
   if (failureCount > 0) {
