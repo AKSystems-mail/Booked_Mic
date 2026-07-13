@@ -262,7 +262,8 @@ class _SignupScreenState extends State<SignupScreen> {
 
     Widget buildSpotTile(int displayIndex, SpotType type, String spotKey) {
       final spotData = spotsMap[spotKey];
-      bool isAvailable = spotData == null;
+      // A spot is available if: no entry exists in the map, OR it's an empty map (no userId and no name data)
+      bool isAvailable = spotData == null || (spotData is Map && spotData['userId'] == null && spotData['name'] == null);
       bool isTakenByMe = false;
       bool isOver = false;
       String titleText = 'Available';

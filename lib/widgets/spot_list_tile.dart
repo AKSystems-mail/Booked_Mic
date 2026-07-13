@@ -33,7 +33,8 @@ class SpotListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-     bool isAvailable = spotData == null;
+     // A spot is available if: no entry exists, OR it's an empty map (no userId and no name data)
+     bool isAvailable = spotData == null || (spotData is Map && spotData['userId'] == null && spotData['name'] == null);
      // --- CORRECTED TYPE CHECK ---
      bool isReserved = spotData is String && spotData == 'RESERVED';
      // --- END CORRECTION ---
