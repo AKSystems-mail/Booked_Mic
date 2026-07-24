@@ -3,22 +3,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Performer {
   final String? id;
-  final String performerName;
-  final String defaultCity;
+  final String stageName;
+  final String city;
 
   Performer({
     this.id,
-    required this.performerName,
-    required this.defaultCity,
+    required this.stageName,
+    required this.city,
   });
 
-  // Getter for FirestoreService compatibility
   String? get uid => id;
 
   Map<String, dynamic> toMap() {
     return {
-      'performerName': performerName,
-      'defaultCity': defaultCity,
+      'stageName': stageName,
+      'city': city,
     };
   }
 
@@ -26,8 +25,8 @@ class Performer {
     Map data = doc.data() as Map<String, dynamic>;
     return Performer(
       id: doc.id,
-      performerName: data['performerName'] ?? '',
-      defaultCity: data['defaultCity'] ?? '',
+      stageName: data['stageName'] ?? '',
+      city: data['city'] ?? '',
     );
   }
 }

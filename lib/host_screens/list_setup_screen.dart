@@ -161,7 +161,7 @@ class _ListSetupScreenState extends State<ListSetupScreen> {
           'guestHostCode': _guestHostEnabled ? _guestHostCodeController.text.trim() : null,
           'guestHostUserId': guestHostUid,
           'userId': user.uid,
-          'createdAt': Timestamp.now(),
+          'createdAt': FieldValue.serverTimestamp(),
           'spots': {},
           'signedUpUserIds': [],
         };

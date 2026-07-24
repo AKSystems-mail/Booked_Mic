@@ -17,7 +17,6 @@ import '../role_selection_screen.dart';
 import 'signup_screen.dart';
 import '../registration_screen.dart';
 import '../widgets/qr_scanner_overlay.dart';
-import '../services/notification_service.dart';
 
 class PerformerListScreen extends StatefulWidget {
   const PerformerListScreen({super.key});
@@ -593,76 +592,11 @@ class _PerformerListScreenState extends State<PerformerListScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Colors.blue.shade200, Colors.purple.shade100])),
-            child: _selectedSearchState == null ? _buildMySignupsView() : _buildSearchResultsBasedOnState(_selectedSearchState!),
-          ),
-          // --- REAL-TIME QUEUE STATUS BANNER ---
-          ValueListenableBuilder<Map<String, int?>>(
-            valueListenable: NotificationService().lastNotifiedPositionNotifier,
-            builder: (context, positions, child) {
-              if (positions.isEmpty) return const SizedBox.shrink();
-              
-              // Find the closest position among all signed-up lists
-              String? listId;
-              int? position;
-              
-              positions.forEach((key, val) {
-                if (val != null && (position == null || val < position!)) {
-                  position = val;
-                  listId = key;
-                }
-              });
-
-              if (position == null) return const SizedBox.shrink();
-
-              String message = position == 0 
-                  ? "YOU ARE UP NEXT!" 
-                  : (position == 1 ? "1 person ahead of you" : "$position people ahead of you");
-
-              return Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: FadeInDown(
-                  duration: const Duration(milliseconds: 500),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: position == 0 ? Colors.orange.shade800 : Colors.blue.shade800,
-                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.notifications_active, color: Colors.white, size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            message,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            // Clear the notification for this specific list locally
-                            final nextMap = Map<String, int?>.from(NotificationService().lastNotifiedPositionNotifier.value);
-                            nextMap.remove(listId);
-                            NotificationService().lastNotifiedPositionNotifier.value = nextMap;
-                          },
-                          child: const Text("GOT IT", style: TextStyle(color: Colors.white, decoration: TextDecoration.underline, fontSize: 12)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Colors.blue.shade200, Colors.purple.shade100])),
+        child: _selectedSearchState == null ? _buildMySignupsView() : _buildSearchResultsBasedOnState(_selectedSearchState!),
       ),
       floatingActionButton: FadeInUp(
         delay: const Duration(milliseconds: 600),

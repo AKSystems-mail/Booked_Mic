@@ -6,13 +6,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:quick_actions/quick_actions.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 
@@ -81,7 +81,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           importance: Importance.high,
           priority: Priority.high,
         ),
-        iOS: DarwinNotificationDetails(presentSound: true),
+        iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
       ),
       payload: listId,
     );
@@ -92,6 +92,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void _handleForegroundFcmMessage(RemoteMessage message) {
   final data = message.data;
   if (data['type'] == 'spot_update') {
+    HapticFeedback.heavyImpact();
     final title = data['title'] ?? 'Booked Mic Update';
     final body = data['body'] ?? 'Your spot has updated.';
     final listId = data['listId'] ?? '';
@@ -107,7 +108,7 @@ void _handleForegroundFcmMessage(RemoteMessage message) {
           importance: Importance.high,
           priority: Priority.high,
         ),
-        iOS: DarwinNotificationDetails(presentSound: true),
+        iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
       ),
       payload: listId,
     );
@@ -159,24 +160,6 @@ Future<void> main() async {
      await dotenv.load(fileName: ".env");
   } catch (e) {
      debugPrint("Error loading .env file: $e");
-  }
-
-  // Notification initialization (mobile only)
-  if (!kIsWeb) {
-    AwesomeNotifications().initialize(
-      null,
-      [
-        NotificationChannel(
-          channelKey: 'spot_updates_channel',
-          channelName: 'Spot Updates',
-          channelDescription: 'Notifications for queue position updates',
-          defaultColor: const Color(0xFF9D50BB),
-          ledColor: Colors.white,
-          importance: NotificationImportance.High,
-        )
-      ],
-      debug: true,
-    );
   }
 
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');

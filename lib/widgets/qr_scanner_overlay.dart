@@ -15,6 +15,7 @@ class _QrScannerOverlayState extends State<QrScannerOverlay> {
   QRViewController? controller;
   StreamSubscription<Barcode>? _subscription;
   bool _flashOn = false;
+  bool _hasScanned = false;
 
   @override
   void dispose() {
@@ -28,9 +29,12 @@ class _QrScannerOverlayState extends State<QrScannerOverlay> {
     controller = c;
     c.resumeCamera();
     _subscription = c.scannedDataStream.listen((scanData) {
-      if (scanData.code != null && mounted) {
-        Navigator.pop(context, scanData.code);
-      }
+      if (_hasScanned || scanData.code == null || !mounted) return;
+      _hasScanned = true;
+      _subscription?.cancel();
+      controller?.pauseCamera();
+      controller?.dispose();
+      Navigator.pop(context, scanData.code);
     });
   }
 

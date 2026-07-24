@@ -96,10 +96,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           }
           await _firestore.collection('users').doc(user.uid).set({
             'uid': user.uid,
-            'email': user.email,
+            'email': user.email?.toLowerCase(),
             'stageName': stageName,
             'createdAt': FieldValue.serverTimestamp(),
-          });
+          }, SetOptions(merge: true));
         }
         _navigateToNextScreen();
       }
@@ -244,7 +244,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         if (!userSnap.exists || !((userSnap.data() as Map).containsKey('stageName'))) {
           await userRef.set({
             'uid': userCredential.user!.uid,
-            'email': userCredential.user!.email,
+            'email': userCredential.user!.email?.toLowerCase(),
             'stageName': userCredential.user!.displayName ?? userCredential.user!.email?.split('@')[0] ?? 'Comedian',
             if (!userSnap.exists) 'createdAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));

@@ -1,5 +1,6 @@
 // lib/host_screens/created_lists_screen.dart
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -30,6 +31,33 @@ class CreatedListsScreen extends StatefulWidget {
 class _CreatedListsScreenState extends State<CreatedListsScreen> {
   String? get currentUserId => FirebaseAuth.instance.currentUser?.uid;
   final ScreenshotController _screenshotController = ScreenshotController();
+  bool _codeTimedOut = false;
+  Timer? _codeTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _codeTimer = Timer(const Duration(seconds: 15), () {
+      if (mounted) setState(() => _codeTimedOut = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _codeTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _retryHostCode() async {
+    setState(() => _codeTimedOut = false);
+    _codeTimer?.cancel();
+    _codeTimer = Timer(const Duration(seconds: 15), () {
+      if (mounted) setState(() => _codeTimedOut = true);
+    });
+    UserService().ensureHostCode().catchError((_) {
+      if (mounted) setState(() => _codeTimedOut = true);
+    });
+  }
 
   Future<void> _switchRole(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
@@ -256,34 +284,67 @@ class _CreatedListsScreenState extends State<CreatedListsScreen> {
               builder: (context, snapshot) {
                 final code = snapshot.data;
                 final bool hasCode = code != null && code.isNotEmpty;
-                
-                if (!hasCode) {
+
+                if (hasCode) {
+                  _codeTimer?.cancel();
+                }
+
+                if (hasCode) {
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 20.0),
-                    child: Pulse(
-                      infinite: true,
-                      child: const Text(
-                        'GENERATING CODE...',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white70,
-                          letterSpacing: 2,
-                        ),
+                    child: Text(
+                      'HOST CODE: $code',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 2,
                       ),
+                    ),
+                  );
+                }
+
+                if (_codeTimedOut) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20.0),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'FAILED TO GENERATE CODE',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.redAccent,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.refresh, size: 16, color: Colors.white),
+                          label: const Text('Retry', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.white54),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          ),
+                          onPressed: _retryHostCode,
+                        ),
+                      ],
                     ),
                   );
                 }
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 20.0),
-                  child: Text(
-                    'HOST CODE: $code',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 2,
+                  child: Pulse(
+                    infinite: true,
+                    child: const Text(
+                      'GENERATING CODE...',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white70,
+                        letterSpacing: 2,
+                      ),
                     ),
                   ),
                 );

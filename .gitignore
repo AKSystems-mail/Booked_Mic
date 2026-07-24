@@ -51,3 +51,9 @@ android/app/.cxx/
 
 # Generated query logs
 functions/_query_logs.js
+
+# Apple Auth Key (never commit)
+*.p8
+
+# iOS build artifacts
+ios/Flutter/build/

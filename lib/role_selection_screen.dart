@@ -1,14 +1,16 @@
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:animate_do/animate_do.dart'; // Import animate_do
-import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:animate_do/animate_do.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Import destination screens
-import 'host_screens/created_lists_screen.dart'; // Adjusted path assuming structure
-import 'performer_screens/performer_list_screen.dart'; // Adjusted path assuming structure
-import 'registration_screen.dart'; // For sign out navigation
+import 'host_screens/created_lists_screen.dart';
+import 'performer_screens/performer_list_screen.dart';
+import 'registration_screen.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
@@ -46,17 +48,8 @@ class RoleSelectionScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _deleteAccount(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No user is currently signed in.')),
-      );
-      return;
-    }
-
-    // Prompt for re-authentication
-    final bool? reauthenticated = await showDialog<bool>(
+  Future<bool?> _reauthenticateWithEmail(User user, BuildContext context) async {
+    return showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         final TextEditingController emailController = TextEditingController(text: user.email);
@@ -70,7 +63,7 @@ class RoleSelectionScreen extends StatelessWidget {
               TextField(
                 controller: emailController,
                 decoration: const InputDecoration(labelText: 'Email'),
-                enabled: false, // Email should not be editable
+                enabled: false,
               ),
               TextField(
                 controller: passwordController,
@@ -92,12 +85,12 @@ class RoleSelectionScreen extends StatelessWidget {
                     password: passwordController.text,
                   );
                   await user.reauthenticateWithCredential(credential);
-                  Navigator.of(dialogContext).pop(true); // Re-authentication successful
+                  Navigator.of(dialogContext).pop(true);
                 } on FirebaseAuthException catch (e) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(content: Text('Re-authentication failed: ${e.message}')),
                   );
-                  Navigator.of(dialogContext).pop(false); // Re-authentication failed
+                  Navigator.of(dialogContext).pop(false);
                 }
               },
               child: const Text('Confirm'),
@@ -106,8 +99,74 @@ class RoleSelectionScreen extends StatelessWidget {
         );
       },
     );
+  }
 
-    if (reauthenticated == null || !reauthenticated) {
+  Future<bool> _reauthenticateWithGoogle(User user) async {
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) return false;
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      await user.reauthenticateWithCredential(credential);
+      return true;
+    } catch (e) {
+      debugPrint('Google re-auth failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _reauthenticateWithApple(User user) async {
+    if (kIsWeb) return false;
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      final OAuthCredential authCredential = OAuthProvider("apple.com").credential(
+        idToken: credential.identityToken,
+        accessToken: credential.authorizationCode,
+      );
+      await user.reauthenticateWithCredential(authCredential);
+      return true;
+    } catch (e) {
+      debugPrint('Apple re-auth failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> _deleteAccount(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No user is currently signed in.')),
+      );
+      return;
+    }
+
+    final providers = user.providerData.map((info) => info.providerId).toSet();
+
+    bool reauthenticated = false;
+    if (providers.contains('password')) {
+      final result = await _reauthenticateWithEmail(user, context);
+      reauthenticated = result == true;
+    } else if (providers.contains('google.com')) {
+      reauthenticated = await _reauthenticateWithGoogle(user);
+    } else if (providers.contains('apple.com')) {
+      reauthenticated = await _reauthenticateWithApple(user);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No supported sign-in method found for re-authentication.')),
+      );
+      return;
+    }
+
+    if (!reauthenticated) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Account deletion cancelled or re-authentication failed.')),
       );

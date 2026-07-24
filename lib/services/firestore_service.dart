@@ -243,7 +243,7 @@ class FirestoreService {
   }
 
   Future<void> addPerformer(Performer performer) async {
-    await _db.collection('users').doc(performer.uid).set(performer.toMap());
+    await _db.collection('users').doc(performer.uid).set(performer.toMap(), SetOptions(merge: true));
   }
 
   Future<void> updatePerformer(Performer performer) async {

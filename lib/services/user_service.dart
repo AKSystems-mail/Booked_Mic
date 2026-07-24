@@ -61,7 +61,7 @@ class UserService {
         final userRef = _firestore.collection('users').doc(user.uid);
         await userRef.set({
           'uid': user.uid,
-          'email': user.email,
+          'email': user.email?.toLowerCase(),
           'hostCode': newCode,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));

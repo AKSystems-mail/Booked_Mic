@@ -83,10 +83,10 @@ service cloud.firestore {
     // --- Users Collection ---
     match /users/{userId} {
       allow get: if isAuthenticated();
-      allow list: if false;
+      allow list: if isAuthenticated();
       allow create: if isAuthenticated() && request.auth.uid == userId;
       allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
-      allow delete: if false;
+      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
     }
   }
 }
