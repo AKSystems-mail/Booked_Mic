@@ -1,5 +1,9 @@
 # AGENTS.md — Booked_Mic
 
+**What Booked Mic is:** a real-time **open-mic performance list manager** — hosts run lists, performers sign up, and the queue moves live (spots advance, waitlist promotes, "up next" alerts). It replaces the paper sign-up sheet. It is **NOT a venue booking platform** and there is **NO B2B inventory feature** — those descriptions are inaccurate and have been removed from resumes (08-18). Do not describe it that way.
+
+**How performers join a list (3 ways):** browse + self-signup when the host allows pre-signups; scan the QR code the host prints for in-person day-of signups; or the host manually adds the name.
+
 Monorepo: Flutter app (root) + Firebase Functions (`functions/`) + React admin dashboard (`admin-dashboard/`).
 
 ## Dev commands
@@ -52,6 +56,10 @@ cd functions && npm run deploy           # firebase deploy --only functions
 - Functions: no test suite configured.
 - Admin dashboard: no test suite configured (Vite — add vitest if needed).
 - CI: `.github/workflows/build.yml` only builds Android APK.
+
+## Compliance
+
+**This app ships to Google Play.** Before building releases or changing permissions/features, read `~/dev/GOOGLE_POLICIES.md` (shared, dated compliance reference). Current actions: verify Play Console registration for all apps by 2026-09-30; no anonymous-chat, contacts, precise-location, call-log, or geofencing usage expected — re-check if new features land.
 
 ## Untrustworthy docs
 

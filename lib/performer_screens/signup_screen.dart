@@ -97,7 +97,11 @@ class _SignupScreenState extends State<SignupScreen> {
          Map<String, dynamic> spots = Map<String, dynamic>.from(listData['spots'] ?? {});
          
           final existingSpot = spots[_selectedSpotKey!];
-          if (existingSpot is Map && existingSpot.isNotEmpty) throw Exception("Spot not available");
+          // Mirror the read-side availability check: a spot is "taken" only
+          // if it has a userId or name. Empty maps and isOver-only entries
+          // are available. The old `isNotEmpty` check rejected isOver-only
+          // spots that the read side rendered as "available".
+          if (existingSpot is Map && (existingSpot['userId'] != null || existingSpot['name'] != null)) throw Exception("Spot not available");
          
          spots[_selectedSpotKey!] = {
            'name': _performerStageName!,

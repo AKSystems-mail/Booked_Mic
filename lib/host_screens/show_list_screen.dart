@@ -732,9 +732,10 @@ Future<void> _updateFirestoreAfterRegularReorder() async {
           spotDataToSave['userId'] = spotItem.userId;
         }
         newSpotsMap[newRegularKey] = spotDataToSave;
-      } else {
-        newSpotsMap[newRegularKey] = {};
       }
+      // Empty slots are intentionally NOT written: an absent key already
+      // renders as "available" in every client. Writing `{}` here was the
+      // source of the recurring empty-spot bug (reorder re-dirtied the map).
     }
 
     await FirebaseFirestore.instance

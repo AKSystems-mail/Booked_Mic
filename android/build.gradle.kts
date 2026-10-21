@@ -31,3 +31,16 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+// Pin every Kotlin subproject (e.g. shared_preferences_android) to JVM 17 so
+// it matches Java's compileOptions. Without this, JDK 21 + AGP 8.9 compiles
+// Java at 17 but Kotlin at 11 -> "Inconsistent JVM-target compatibility".
+subprojects {
+    afterEvaluate {
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions {
+                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            }
+        }
+    }
+}
